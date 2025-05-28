@@ -1,9 +1,8 @@
-const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys')
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
 const { Boom } = require('@hapi/boom')
 const axios = require('axios')
 const fs = require('fs')
 
-// 👉 usamos MULTIFILE para garantir compatibilidade com todas versões
 const startBot = async () => {
     const { state, saveCreds } = await useMultiFileAuthState('zap_session')
 
@@ -33,7 +32,8 @@ const startBot = async () => {
 
     sock.ev.on("connection.update", ({ connection, lastDisconnect }) => {
         if (connection === "close") {
-            const shouldReconnect = (lastDisconnect?.error = Boom)?.output?.statusCode !== DisconnectReason.loggedOut
+            const shouldReconnect = (lastDisconnect?.error instanceof Boom) &&
+                lastDisconnect.error.output?.statusCode !== DisconnectReason.loggedOut
             console.log("Bot desconectado. Reconectar?", shouldReconnect)
             if (shouldReconnect) startBot()
         }
