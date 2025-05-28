@@ -1,9 +1,7 @@
-import pkg from '@whiskeysockets/baileys'
-import { Boom } from '@hapi/boom'
-import axios from 'axios'
-import fs from 'fs'
-
-const { default: makeWASocket, useSingleFileAuthState, DisconnectReason } = pkg
+const { default: makeWASocket, useSingleFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
+const { Boom } = require('@hapi/boom')
+const axios = require('axios')
+const fs = require('fs')
 
 const { state, saveState } = useSingleFileAuthState('./auth_info.json')
 
