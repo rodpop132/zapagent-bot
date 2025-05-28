@@ -1,9 +1,11 @@
-import makeWASocket, { useSingleFileAuthState, DisconnectReason } from "@whiskeysockets/baileys"
-import { Boom } from "@hapi/boom"
-import axios from "axios"
-import fs from "fs"
+import pkg from '@whiskeysockets/baileys'
+import { Boom } from '@hapi/boom'
+import axios from 'axios'
+import fs from 'fs'
 
-const { state, saveState } = useSingleFileAuthState("./auth_info.json")
+const { default: makeWASocket, useSingleFileAuthState, DisconnectReason } = pkg
+
+const { state, saveState } = useSingleFileAuthState('./auth_info.json')
 
 async function startBot() {
     const sock = makeWASocket({
