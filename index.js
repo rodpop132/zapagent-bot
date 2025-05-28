@@ -1,8 +1,9 @@
-const makeWASocket = require('@whiskeysockets/baileys').default
+const baileys = require('@whiskeysockets/baileys')
+const makeWASocket = baileys.default
+const { useSingleFileAuthState, DisconnectReason } = baileys
 const { Boom } = require('@hapi/boom')
 const axios = require('axios')
 const fs = require('fs')
-const { useSingleFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys/lib/auth-utils')
 
 const { state, saveState } = useSingleFileAuthState('./auth_info.json')
 
