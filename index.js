@@ -1,17 +1,24 @@
-import * as baileys from '@whiskeysockets/baileys'
+import makeWASocket, {
+  DisconnectReason,
+  useMultiFileAuthState
+} from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import axios from 'axios'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import crypto from 'crypto'
+
+// Necessário para o Baileys funcionar corretamente no Railway
+globalThis.crypto = crypto
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await baileys.useMultiFileAuthState(path.join(__dirname, 'auth_info'))
+  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'auth_info'))
 
-  const sock = baileys.makeWASocket({
+  const sock = makeWASocket({
     auth: state,
     printQRInTerminal: true,
     browser: ['ZapAgent', 'Chrome', '1.0.0']
@@ -22,7 +29,8 @@ async function connectToWhatsApp() {
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update
     if (connection === 'close') {
-      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== baileys.DisconnectReason.loggedOut
+      const shouldReconnect =
+        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
       console.log('Conexão encerrada:', lastDisconnect?.error, 'Reiniciar?', shouldReconnect)
       if (shouldReconnect) connectToWhatsApp()
     } else if (connection === 'open') {
@@ -53,17 +61,17 @@ async function gerarRespostaIA(texto) {
 
   const data = {
     model: 'mistralai/mistral-7b-instruct:free',
-    messages: [
-      { role: 'user', content: texto }
-    ]
+    messages: [{ role: 'user', content: texto }]
   }
 
   const headers = {
-    'Authorization': `Bearer ${apiKey}`,
+    Authorization: `Bearer ${apiKey}`,
     'Content-Type': 'application/json'
   }
 
-  const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', data, { headers })
+  const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', data, {
+    headers
+  })
   const resposta = response.data?.choices?.[0]?.message?.content
 
   if (!resposta) throw new Error('Resposta vazia da IA.')
