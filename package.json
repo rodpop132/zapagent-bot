@@ -4,7 +4,7 @@
   "type": "module",
   "dependencies": {
     "@whiskeysockets/baileys": "^6.5.0",
-    "@hapi/boom": "^11.1.0",
+    "@hapi/boom": "^10.0.1",
     "axios": "^1.6.8"
   }
 }
