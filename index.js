@@ -1,21 +1,17 @@
-import makeWASocket, {
-  DisconnectReason,
-  useMultiFileAuthState
-} from '@whiskeysockets/baileys'
+import * as baileys from '@whiskeysockets/baileys'
 import { Boom } from '@hapi/boom'
 import axios from 'axios'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
-// Evita duplicação
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'auth_info'))
+  const { state, saveCreds } = await baileys.useMultiFileAuthState(path.join(__dirname, 'auth_info'))
 
-  const sock = makeWASocket({
+  const sock = baileys.makeWASocket({
     auth: state,
     printQRInTerminal: true,
     browser: ['ZapAgent', 'Chrome', '1.0.0']
@@ -26,8 +22,7 @@ async function connectToWhatsApp() {
   sock.ev.on('connection.update', (update) => {
     const { connection, lastDisconnect } = update
     if (connection === 'close') {
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut
+      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== baileys.DisconnectReason.loggedOut
       console.log('Conexão encerrada:', lastDisconnect?.error, 'Reiniciar?', shouldReconnect)
       if (shouldReconnect) connectToWhatsApp()
     } else if (connection === 'open') {
@@ -40,8 +35,7 @@ async function connectToWhatsApp() {
     const msg = messages[0]
     if (!msg.message || msg.key.fromMe) return
 
-    const texto =
-      msg.message.conversation || msg.message.extendedTextMessage?.text || ''
+    const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || ''
     const de = msg.key.remoteJid
 
     try {
@@ -60,15 +54,12 @@ async function gerarRespostaIA(texto) {
   const data = {
     model: 'mistralai/mistral-7b-instruct:free',
     messages: [
-      {
-        role: 'user',
-        content: texto
-      }
+      { role: 'user', content: texto }
     ]
   }
 
   const headers = {
-    Authorization: `Bearer ${apiKey}`,
+    'Authorization': `Bearer ${apiKey}`,
     'Content-Type': 'application/json'
   }
 
