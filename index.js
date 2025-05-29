@@ -1,22 +1,13 @@
-import makeWASocket, {
-  DisconnectReason,
-  useMultiFileAuthState
-} from '@whiskeysockets/baileys'
-import { Boom } from '@hapi/boom'
-import axios from 'axios'
-import fs from 'fs'
-import path from 'path'
-import { fileURLToPath } from 'url'
-import crypto from 'crypto'
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys')
+const axios = require('axios')
+const fs = require('fs')
+const path = require('path')
+const crypto = require('crypto')
 
-// Necessário para o Baileys funcionar corretamente no Railway
-globalThis.crypto = crypto
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+global.crypto = crypto
 
 async function connectToWhatsApp() {
-  const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'auth_info'))
+  const { state, saveCreds } = await useMultiFileAuthState('./auth_info')
 
   const sock = makeWASocket({
     auth: state,
