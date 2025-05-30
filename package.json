@@ -1,27 +1,17 @@
 {
   "name": "zapagent-bot",
   "version": "1.0.0",
-  "description": "WhatsApp bot with AI integration",
+  "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js",
-    "build": "echo \"No build necessary for this project\""
-  },
-  "dependencies": {
-    "@whiskeysockets/baileys": "^6.6.0",
-    "axios": "^0.27.2",
-    "express": "^4.17.1",
-    "fs": "0.0.1-security",
-    "path": "^0.12.7",
-    "url": "^0.11.0"
-  },
-  "devDependencies": {
-    "nodemon": "^2.0.15"
+    "start": "node index.js"
   },
   "engines": {
-    "node": "14.x"
+    "node": ">=18.0.0"
   },
-  "author": "Rodrigo",
-  "license": "MIT"
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.18",
+    "axios": "^1.6.8",
+    "express": "^4.19.2"
+  }
 }
