@@ -1,7 +1,7 @@
 {
   "name": "zapagent-bot",
   "version": "1.0.0",
-  "type": "module",
+  "type": "module",           <-- ESSA LINHA É FUNDAMENTAL
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
