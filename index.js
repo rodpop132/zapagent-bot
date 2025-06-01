@@ -1,6 +1,6 @@
-// index.js completo com suporte total para ZapAgent
+// index.js completo com QR escaneável, múltiplos agentes por número e verificação de plano
 
-const express = require('express'); const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys'); const axios = require('axios'); const fs = require('fs'); const path = require('path'); const qrcode = require('qrcode');
+const express = require('express'); const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys'); const axios = require('axios'); const path = require('path'); const qrcode = require('qrcode');
 
 const app = express(); app.use(express.json());
 
@@ -8,11 +8,11 @@ const agentesConfig = {}; // { numero: [ { nome, prompt, plano, mensagens } ] } 
 
 const limitesPlano = { gratuito: { maxMensagens: 30, maxAgentes: 1 }, standard: { maxMensagens: 10000, maxAgentes: 1 }, ultra: { maxMensagens: Infinity, maxAgentes: 3 } };
 
-// Rota básica app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
+app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
-// Rota para obter QR code por número app.get('/qrcode', (req, res) => { const numero = req.query.numero; const qr = qrStore[numero]; if (!qr) return res.status(404).json({ error: 'QR não encontrado' }); return res.json({ qr }); });
+app.get('/qrcode', (req, res) => { const numero = req.query.numero; const qr = qrStore[numero]; if (!qr) return res.status(404).json({ error: 'QR não encontrado' }); return res.json({ qr }); });
 
-// Rota para criar novo agente app.post('/zapagent', async (req, res) => { const { nome, tipo, descricao, prompt, numero, plano } = req.body; if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
+app.post('/zapagent', async (req, res) => { const { nome, tipo, descricao, prompt, numero, plano } = req.body; if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
 
 const planoAtual = plano?.toLowerCase() || 'gratuito'; const limite = limitesPlano[planoAtual] || limitesPlano.gratuito;
 
@@ -32,7 +32,7 @@ sock.ev.on('connection.update', async (update) => { const { connection, lastDisc
 
 if (qr) {
   const base64 = await qrcode.toDataURL(qr);
-  qrStore['351967578444'] = base64; // Pode adaptar para múltiplos números
+  qrStore['351967578444'] = base64; // Para testar. Substituir pela lógica correta associada a cada número
   console.log('📷 Novo QR code gerado para 351967578444');
 }
 
@@ -83,10 +83,8 @@ const data = { model: 'nousresearch/deephermes-3-llama-3-8b-preview:free', messa
 
 const headers = { Authorization: Bearer ${apiKey}, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://zapagent-ai-builder.lovable.app', 'X-Title': 'ZapAgent AI' };
 
-const response = await axios.post( 'https://openrouter.ai/api/v1/chat/completions', data, { headers } );
-
-const resposta = response.data?.choices?.[0]?.message?.content; if (!resposta) throw new Error('Resposta vazia da IA'); return resposta.trim(); }
+const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', data, { headers }); const resposta = response.data?.choices?.[0]?.message?.content; if (!resposta) throw new Error('Resposta vazia da IA'); return resposta.trim(); }
 
 connectToWhatsApp();
 
-                                                    
+                              
