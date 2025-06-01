@@ -1,6 +1,6 @@
-// index.js completo e corrigido
+// index.js completo com: // - Vários agentes por número // - QR code em imagem Base64 por número // - Limites por plano (mensagens + agentes) // - Integração com OpenRouter // - Endpoint de criação e consulta
 
-const express = require('express'); const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys'); const axios = require('axios'); const fs = require('fs'); const path = require('path'); const qrcode = require('qrcode');
+const express = require('express'); const { makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys'); const axios = require('axios'); const path = require('path'); const qrcode = require('qrcode');
 
 const app = express(); app.use(express.json());
 
@@ -20,9 +20,7 @@ if (!agentesConfig[numero]) agentesConfig[numero] = [];
 
 if (agentesConfig[numero].length >= limite.maxAgentes) { return res.status(403).json({ error: ⚠️ Limite de agentes (${limite.maxAgentes}) atingido para o plano ${planoAtual} }); }
 
-agentesConfig[numero].push({ nome, tipo, descricao, prompt, plano: planoAtual, mensagens: 0 });
-
-console.log(✅ Novo agente criado: ${nome} (${numero})); return res.json({ status: 'ok', msg: 'Agente criado com sucesso' }); });
+agentesConfig[numero].push({ nome, tipo, descricao, prompt, plano: planoAtual, mensagens: 0 }); console.log(✅ Novo agente criado: ${nome} (${numero})); return res.json({ status: 'ok', msg: 'Agente criado com sucesso' }); });
 
 app.listen(10000, () => console.log('🌐 Servidor online em http://localhost:10000'));
 
@@ -36,7 +34,7 @@ sock.ev.on('connection.update', async (update) => { const { connection, lastDisc
 
 if (qr) {
   const base64 = await qrcode.toDataURL(qr);
-  qrStore['351967578444'] = base64; // ← substitui por lógica dinâmica se quiseres
+  qrStore['351967578444'] = base64; // Substituir por lógica real se quiser associar dinamicamente
   console.log('📷 Novo QR code gerado para 351967578444');
 }
 
@@ -59,14 +57,12 @@ const numero = de.split('@')[0];
 const agentes = agentesConfig[numero];
 if (!agentes || agentes.length === 0) return;
 
-const agente = agentes[0];
+const agente = agentes[0]; // pode-se depois usar "ativo"
 const plano = agente.plano.toLowerCase();
 const limite = limitesPlano[plano].maxMensagens;
 
 if (agente.mensagens >= limite) {
-  await sock.sendMessage(de, {
-    text: `⚠️ Limite de mensagens do plano (${plano}) atingido.`
-  });
+  await sock.sendMessage(de, { text: `⚠️ Limite de mensagens do plano (${plano}) atingido.` });
   return;
 }
 
@@ -87,9 +83,7 @@ const data = { model: 'nousresearch/deephermes-3-llama-3-8b-preview:free', messa
 
 const headers = { Authorization: Bearer ${apiKey}, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://zapagent-ai-builder.lovable.app', 'X-Title': 'ZapAgent AI' };
 
-const response = await axios.post( 'https://openrouter.ai/api/v1/chat/completions', data, { headers } );
-
-const resposta = response.data?.choices?.[0]?.message?.content; if (!resposta) throw new Error('Resposta vazia da IA'); return resposta.trim(); }
+const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', data, { headers }); const resposta = response.data?.choices?.[0]?.message?.content; if (!resposta) throw new Error('Resposta vazia da IA'); return resposta.trim(); }
 
 connectToWhatsApp();
 
