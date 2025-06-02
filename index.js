@@ -1,4 +1,5 @@
 const express = require('express');
+const cors = require('cors'); // 👉 ADICIONADO
 const {
   makeWASocket,
   useMultiFileAuthState,
@@ -10,10 +11,11 @@ const path = require('path');
 const qrcode = require('qrcode');
 
 const app = express();
+app.use(cors()); // 👉 ADICIONADO para permitir chamadas da Lovable
 app.use(express.json());
 
-const agentesConfig = {}; // { numero: [ { nome, prompt, plano, mensagens } ] }
-const qrStore = {};        // { numero: imagemBase64 }
+const agentesConfig = {};
+const qrStore = {};
 
 const limitesPlano = {
   gratuito: { maxMensagens: 30, maxAgentes: 1 },
@@ -21,10 +23,8 @@ const limitesPlano = {
   ultra: { maxMensagens: Infinity, maxAgentes: 3 }
 };
 
-// ✅ Status
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
-// 📷 QR code como imagem
 app.get('/qrcode', (req, res) => {
   const numero = req.query.numero;
   const qr = qrStore[numero];
@@ -32,7 +32,6 @@ app.get('/qrcode', (req, res) => {
   res.send(`<html><body><h2>Escaneie para conectar:</h2><img src="${qr}" /></body></html>`);
 });
 
-// 🔧 Criar agente
 app.post('/zapagent', async (req, res) => {
   const { nome, tipo, descricao, prompt, numero, plano } = req.body;
   if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
@@ -61,12 +60,10 @@ app.post('/zapagent', async (req, res) => {
   return res.json({ status: 'ok', msg: 'Agente criado com sucesso' });
 });
 
-// 🚀 Iniciar servidor
 app.listen(10000, () =>
   console.log('🌐 Servidor online em http://localhost:10000')
 );
 
-// 🤖 Conectar WhatsApp
 async function connectToWhatsApp() {
   const pasta = path.join(__dirname, 'auth_info');
   const { state, saveCreds } = await useMultiFileAuthState(pasta);
@@ -86,7 +83,7 @@ async function connectToWhatsApp() {
 
     if (qr) {
       const base64 = await qrcode.toDataURL(qr);
-      qrStore['351967578444'] = base64; // <- substituir por lógica futura dinâmica
+      qrStore['351967578444'] = base64;
       console.log('📷 Novo QR gerado para 351967578444');
     }
 
@@ -133,7 +130,6 @@ async function connectToWhatsApp() {
   });
 }
 
-// 🧠 Integração IA
 async function gerarRespostaIA(mensagem, contexto) {
   const apiKey = process.env.OPENROUTER_API_KEY;
 
