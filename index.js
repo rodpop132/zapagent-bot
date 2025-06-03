@@ -16,10 +16,10 @@ app.use(cors());
 app.use(express.json());
 
 const agentesConfig = {}; // { numero: [ { ...agente } ] }
-const qrStore = {};        // { numero: imagemBase64 }
-const clientes = {};       // { numero: socket WhatsApp }
+const qrStore = {};       // { numero: imagemBase64 }
+const clientes = {};      // { numero: socket WhatsApp }
 const verificados = new Set(); // números com QR confirmado
-const historicoIA = {};    // { numero: [ {role, content} ] }
+const historicoIA = {};   // { numero: [ {role, content} ] }
 
 const limitesPlano = {
   gratuito: { maxMensagens: 30, maxAgentes: 1 },
@@ -28,6 +28,37 @@ const limitesPlano = {
 };
 
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
+
+// Rota para listar agentes ativos
+app.get('/agentes', (req, res) => {
+  res.json(agentesConfig);
+});
+
+// Rota para gerar novo QR e manter configuração do agente
+app.get('/reiniciar', async (req, res) => {
+  const numero = req.query.numero;
+  if (!numero || !agentesConfig[numero]) {
+    return res.status(400).json({ error: 'Número inválido ou sem agente' });
+  }
+
+  verificados.delete(numero);
+  delete qrStore[numero];
+  delete clientes[numero];
+  await conectarWhatsApp(numero);
+  res.json({ status: 'ok', msg: 'QR reiniciado com sucesso' });
+});
+
+// Rota para consultar uso de mensagens
+app.get('/mensagens-usadas', (req, res) => {
+  const numero = req.query.numero;
+  if (!numero || !agentesConfig[numero]) {
+    return res.status(404).json({ error: 'Número não encontrado' });
+  }
+
+  const agentes = agentesConfig[numero];
+  const total = agentes.reduce((acc, ag) => acc + (ag.mensagens || 0), 0);
+  res.json({ numero, mensagensUsadas: total });
+});
 
 // Retorna o QR code como imagem base64
 app.get('/qrcode', (req, res) => {
@@ -42,7 +73,7 @@ app.get('/qrcode', (req, res) => {
 
 // Criação de agente e conexão
 app.post('/zapagent', async (req, res) => {
-  const { nome, tipo, descricao, prompt, numero, plano } = req.body;
+  const { nome, tipo, descricao, prompt, numero, plano, webhook } = req.body;
   if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
 
   const planoAtual = plano?.toLowerCase() || 'gratuito';
@@ -62,7 +93,8 @@ app.post('/zapagent', async (req, res) => {
     descricao,
     prompt,
     plano: planoAtual,
-    mensagens: 0
+    mensagens: 0,
+    webhook
   });
 
   if (!clientes[numero]) {
@@ -181,6 +213,16 @@ async function conectarWhatsApp(numero) {
       const resposta = await gerarRespostaIA(senderNumero, texto, agente.prompt);
       await sock.sendMessage(de, { text: resposta });
       agente.mensagens += 1;
+
+      // 🔔 Envia para webhook se houver
+      if (agente.webhook) {
+        axios.post(agente.webhook, {
+          numero: senderNumero,
+          pergunta: texto,
+          resposta
+        }).catch(err => console.log('Webhook erro:', err.message));
+      }
+
     } catch (err) {
       console.error('❌ Erro IA:', err);
       await sock.sendMessage(de, { text: '❌ Erro ao gerar resposta da IA.' });
