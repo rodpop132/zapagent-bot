@@ -18,6 +18,7 @@ app.use(express.json());
 const agentesConfig = {}; // { numero: [ { ...agente } ] }
 const qrStore = {};        // { numero: imagemBase64 }
 const clientes = {};       // { numero: socket WhatsApp }
+const verificados = new Set(); // números com QR confirmado
 
 const limitesPlano = {
   gratuito: { maxMensagens: 30, maxAgentes: 1 },
@@ -25,30 +26,20 @@ const limitesPlano = {
   ultra: { maxMensagens: Infinity, maxAgentes: 3 }
 };
 
-// 🔄 Status
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
-// 🔄 QR dinâmico por número
+// Retorna o QR code como imagem base64
 app.get('/qrcode', (req, res) => {
   const numero = req.query.numero;
+  if (verificados.has(numero)) {
+    return res.status(200).send('✅ Número já conectado');
+  }
   const qr = qrStore[numero];
   if (!qr) return res.status(404).send('QR não encontrado');
   res.send(`<html><body><h2>Escaneie para conectar:</h2><img src="${qr}" /></body></html>`);
 });
 
-// ✅ Verificar se o número já está conectado
-app.get('/verificar', (req, res) => {
-  const numero = req.query.numero;
-  const cliente = clientes[numero];
-
-  if (cliente && cliente.user) {
-    return res.json({ conectado: true, msg: '✅ Número conectado com sucesso!' });
-  } else {
-    return res.json({ conectado: false, msg: '⚠️ Número ainda não está conectado.' });
-  }
-});
-
-// 🚀 Criar agente e conectar número
+// Criação de agente e conexão
 app.post('/zapagent', async (req, res) => {
   const { nome, tipo, descricao, prompt, numero, plano } = req.body;
   if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
@@ -81,12 +72,37 @@ app.post('/zapagent', async (req, res) => {
   return res.json({ status: 'ok', msg: 'Agente criado com sucesso' });
 });
 
-// 🚀 Start server
-app.listen(10000, () =>
-  console.log('🌐 Servidor online em http://localhost:10000')
-);
+// 🧠 Integração com IA
+async function gerarRespostaIA(mensagem, contexto) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
 
-// 🔌 Conectar número dinamicamente
+  const data = {
+    model: 'nousresearch/deephermes-3-llama-3-8b-preview:free',
+    messages: [
+      { role: 'system', content: contexto || 'Você é um agente inteligente.' },
+      { role: 'user', content: mensagem }
+    ]
+  };
+
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+    'HTTP-Referer': 'https://zapagent-ai-builder.lovable.app',
+    'X-Title': 'ZapAgent AI'
+  };
+
+  const response = await axios.post(
+    'https://openrouter.ai/api/v1/chat/completions',
+    data,
+    { headers }
+  );
+
+  const resposta = response.data?.choices?.[0]?.message?.content;
+  if (!resposta) throw new Error('❌ Resposta vazia da IA');
+  return resposta.trim();
+}
+
+// 🔌 Conexão dinâmica por número
 async function conectarWhatsApp(numero) {
   const pasta = path.join(__dirname, 'auth_info', numero);
   if (!fs.existsSync(pasta)) fs.mkdirSync(pasta, { recursive: true });
@@ -108,7 +124,7 @@ async function conectarWhatsApp(numero) {
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
-    if (qr) {
+    if (qr && !verificados.has(numero)) {
       const base64 = await qrcode.toDataURL(qr);
       qrStore[numero] = base64;
       console.log(`📷 QR gerado para ${numero}`);
@@ -120,6 +136,8 @@ async function conectarWhatsApp(numero) {
       console.log(`❌ ${numero} desconectado`);
       if (shouldReconnect) conectarWhatsApp(numero);
     } else if (connection === 'open') {
+      verificados.add(numero); // marca como verificado
+      delete qrStore[numero]; // remove QR após conexão
       console.log(`✅ ${numero} conectado com sucesso!`);
     }
   });
@@ -158,32 +176,9 @@ async function conectarWhatsApp(numero) {
   });
 }
 
-// 🧠 IA
-async function gerarRespostaIA(mensagem, contexto) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () =>
+  console.log(`🌐 Servidor online em http://localhost:${PORT}`)
+);
 
-  const data = {
-    model: 'nousresearch/deephermes-3-llama-3-8b-preview:free',
-    messages: [
-      { role: 'system', content: contexto || 'Você é um agente inteligente.' },
-      { role: 'user', content: mensagem }
-    ]
-  };
-
-  const headers = {
-    Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-    'HTTP-Referer': 'https://zapagent-ai-builder.lovable.app',
-    'X-Title': 'ZapAgent AI'
-  };
-
-  const response = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    data,
-    { headers }
-  );
-
-  const resposta = response.data?.choices?.[0]?.message?.content;
-  if (!resposta) throw new Error('❌ Resposta vazia da IA');
-  return resposta.trim();
-}
+connectToWhatsApp = () => {}; // segurança extra se for chamado acidentalmente
