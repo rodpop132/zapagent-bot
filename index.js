@@ -25,6 +25,7 @@ const limitesPlano = {
   ultra: { maxMensagens: Infinity, maxAgentes: 3 }
 };
 
+// 🔄 Status
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
 // 🔄 QR dinâmico por número
@@ -33,6 +34,18 @@ app.get('/qrcode', (req, res) => {
   const qr = qrStore[numero];
   if (!qr) return res.status(404).send('QR não encontrado');
   res.send(`<html><body><h2>Escaneie para conectar:</h2><img src="${qr}" /></body></html>`);
+});
+
+// ✅ Verificar se o número já está conectado
+app.get('/verificar', (req, res) => {
+  const numero = req.query.numero;
+  const cliente = clientes[numero];
+
+  if (cliente && cliente.user) {
+    return res.json({ conectado: true, msg: '✅ Número conectado com sucesso!' });
+  } else {
+    return res.json({ conectado: false, msg: '⚠️ Número ainda não está conectado.' });
+  }
 });
 
 // 🚀 Criar agente e conectar número
@@ -68,41 +81,12 @@ app.post('/zapagent', async (req, res) => {
   return res.json({ status: 'ok', msg: 'Agente criado com sucesso' });
 });
 
+// 🚀 Start server
 app.listen(10000, () =>
   console.log('🌐 Servidor online em http://localhost:10000')
 );
 
-// 🧠 IA
-async function gerarRespostaIA(mensagem, contexto) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-
-  const data = {
-    model: 'nousresearch/deephermes-3-llama-3-8b-preview:free',
-    messages: [
-      { role: 'system', content: contexto || 'Você é um agente inteligente.' },
-      { role: 'user', content: mensagem }
-    ]
-  };
-
-  const headers = {
-    Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-    'HTTP-Referer': 'https://zapagent-ai-builder.lovable.app',
-    'X-Title': 'ZapAgent AI'
-  };
-
-  const response = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    data,
-    { headers }
-  );
-
-  const resposta = response.data?.choices?.[0]?.message?.content;
-  if (!resposta) throw new Error('❌ Resposta vazia da IA');
-  return resposta.trim();
-}
-
-// 🔌 Conexão dinâmica por número
+// 🔌 Conectar número dinamicamente
 async function conectarWhatsApp(numero) {
   const pasta = path.join(__dirname, 'auth_info', numero);
   if (!fs.existsSync(pasta)) fs.mkdirSync(pasta, { recursive: true });
@@ -172,4 +156,34 @@ async function conectarWhatsApp(numero) {
       await sock.sendMessage(de, { text: '❌ Erro ao gerar resposta da IA.' });
     }
   });
+}
+
+// 🧠 IA
+async function gerarRespostaIA(mensagem, contexto) {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+
+  const data = {
+    model: 'nousresearch/deephermes-3-llama-3-8b-preview:free',
+    messages: [
+      { role: 'system', content: contexto || 'Você é um agente inteligente.' },
+      { role: 'user', content: mensagem }
+    ]
+  };
+
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+    'HTTP-Referer': 'https://zapagent-ai-builder.lovable.app',
+    'X-Title': 'ZapAgent AI'
+  };
+
+  const response = await axios.post(
+    'https://openrouter.ai/api/v1/chat/completions',
+    data,
+    { headers }
+  );
+
+  const resposta = response.data?.choices?.[0]?.message?.content;
+  if (!resposta) throw new Error('❌ Resposta vazia da IA');
+  return resposta.trim();
 }
