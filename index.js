@@ -19,10 +19,11 @@ const agentesConfig = {}; // { numero: [ { ...agente } ] }
 const qrStore = {};        // { numero: imagemBase64 }
 const clientes = {};       // { numero: socket WhatsApp }
 const verificados = new Set(); // números com QR confirmado
+const historicoIA = {};    // { numero: [ {role, content} ] }
 
 const limitesPlano = {
   gratuito: { maxMensagens: 30, maxAgentes: 1 },
-  standard: { maxMensagens: 10000, maxAgentes: 1 },
+  pro: { maxMensagens: 10000, maxAgentes: 3 },
   ultra: { maxMensagens: Infinity, maxAgentes: 3 }
 };
 
@@ -72,16 +73,21 @@ app.post('/zapagent', async (req, res) => {
   return res.json({ status: 'ok', msg: 'Agente criado com sucesso' });
 });
 
-// 🧠 Integração com IA
-async function gerarRespostaIA(mensagem, contexto) {
+// Integração com IA com memória temporária por número
+async function gerarRespostaIA(numero, mensagem, contexto) {
   const apiKey = process.env.OPENROUTER_API_KEY;
+
+  if (!historicoIA[numero]) {
+    historicoIA[numero] = [
+      { role: 'system', content: contexto || 'Você é um agente inteligente.' }
+    ];
+  }
+
+  historicoIA[numero].push({ role: 'user', content: mensagem });
 
   const data = {
     model: 'nousresearch/deephermes-3-llama-3-8b-preview:free',
-    messages: [
-      { role: 'system', content: contexto || 'Você é um agente inteligente.' },
-      { role: 'user', content: mensagem }
-    ]
+    messages: historicoIA[numero]
   };
 
   const headers = {
@@ -99,10 +105,16 @@ async function gerarRespostaIA(mensagem, contexto) {
 
   const resposta = response.data?.choices?.[0]?.message?.content;
   if (!resposta) throw new Error('❌ Resposta vazia da IA');
+
+  historicoIA[numero].push({ role: 'assistant', content: resposta.trim() });
+
+  // Limita histórico a 10 interações por eficiência
+  if (historicoIA[numero].length > 20) historicoIA[numero].splice(1, 2);
+
   return resposta.trim();
 }
 
-// 🔌 Conexão dinâmica por número
+// Conexão dinâmica por número
 async function conectarWhatsApp(numero) {
   const pasta = path.join(__dirname, 'auth_info', numero);
   if (!fs.existsSync(pasta)) fs.mkdirSync(pasta, { recursive: true });
@@ -136,8 +148,8 @@ async function conectarWhatsApp(numero) {
       console.log(`❌ ${numero} desconectado`);
       if (shouldReconnect) conectarWhatsApp(numero);
     } else if (connection === 'open') {
-      verificados.add(numero); // marca como verificado
-      delete qrStore[numero]; // remove QR após conexão
+      verificados.add(numero);
+      delete qrStore[numero];
       console.log(`✅ ${numero} conectado com sucesso!`);
     }
   });
@@ -166,7 +178,7 @@ async function conectarWhatsApp(numero) {
     }
 
     try {
-      const resposta = await gerarRespostaIA(texto, agente.prompt);
+      const resposta = await gerarRespostaIA(senderNumero, texto, agente.prompt);
       await sock.sendMessage(de, { text: resposta });
       agente.mensagens += 1;
     } catch (err) {
@@ -181,4 +193,5 @@ app.listen(PORT, () =>
   console.log(`🌐 Servidor online em http://localhost:${PORT}`)
 );
 
-connectToWhatsApp = () => {}; // segurança extra se for chamado acidentalmente
+// Segurança: impede uso externo se chamado incorretamente
+connectToWhatsApp = () => {};
