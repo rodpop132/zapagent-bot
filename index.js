@@ -30,6 +30,21 @@ const limitesPlano = {
 
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
+app.get('/qrcode-imagem', (req, res) => {
+  const numero = req.query.numero;
+  const qr = qrStore[numero];
+  if (!qr) return res.status(404).send('QR não encontrado');
+
+  const base64Data = qr.replace(/^data:image\/png;base64,/, "");
+  const img = Buffer.from(base64Data, 'base64');
+
+  res.writeHead(200, {
+    'Content-Type': 'image/png',
+    'Content-Length': img.length
+  });
+  res.end(img);
+});
+
 app.get('/agentes', (req, res) => {
   res.json(agentesConfig);
 });
@@ -73,22 +88,6 @@ app.get('/qrcode', (req, res) => {
   const qr = qrStore[numero];
   if (!qr) return res.status(404).send('QR não encontrado');
   res.send(`<html><body><h2>Escaneie para conectar:</h2><img src="${qr}" /></body></html>`);
-});
-
-// ✅ NOVA ROTA PARA USAR EM <img>
-app.get('/qrcode-imagem', (req, res) => {
-  const numero = req.query.numero;
-  const qr = qrStore[numero];
-  if (!qr) return res.status(404).send('QR não encontrado');
-
-  const base64Data = qr.replace(/^data:image\/png;base64,/, "");
-  const img = Buffer.from(base64Data, 'base64');
-
-  res.writeHead(200, {
-    'Content-Type': 'image/png',
-    'Content-Length': img.length
-  });
-  res.end(img);
 });
 
 app.get('/verificar', (req, res) => {
@@ -202,6 +201,7 @@ async function conectarWhatsApp(numero) {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    console.log('📩 Evento messages.upsert recebido');
     if (type !== 'notify') return;
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
@@ -210,8 +210,15 @@ async function conectarWhatsApp(numero) {
     const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
     const senderNumero = de.split('@')[0];
 
+    console.log('🔎 Mensagem de:', senderNumero);
+    console.log('🔎 Conteúdo:', texto);
+    console.log('📚 Agentes disponíveis:', agentesConfig[senderNumero]);
+
     const agentes = agentesConfig[senderNumero];
-    if (!agentes || agentes.length === 0) return;
+    if (!agentes || agentes.length === 0) {
+      console.log('⚠️ Nenhum agente encontrado para este número');
+      return;
+    }
 
     const agente = agentes[0];
     const plano = agente.plano.toLowerCase();
