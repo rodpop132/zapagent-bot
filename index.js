@@ -21,20 +21,19 @@ const clientes = {};      // { numero: socket WhatsApp }
 const verificados = new Set(); // números com QR confirmado
 const historicoIA = {};   // { numero: [ {role, content} ] }
 
+// Planos atualizados conforme imagem
 const limitesPlano = {
   gratuito: { maxMensagens: 30, maxAgentes: 1 },
   pro: { maxMensagens: 10000, maxAgentes: 3 },
-  ultra: { maxMensagens: Infinity, maxAgentes: 3 }
+  ultra: { maxMensagens: Infinity, maxAgentes: Infinity }
 };
 
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
-// Rota para listar agentes ativos
 app.get('/agentes', (req, res) => {
   res.json(agentesConfig);
 });
 
-// Rota para gerar novo QR e manter configuração do agente
 app.get('/reiniciar', async (req, res) => {
   const numero = req.query.numero;
   if (!numero || !agentesConfig[numero]) {
@@ -48,7 +47,6 @@ app.get('/reiniciar', async (req, res) => {
   res.json({ status: 'ok', msg: 'QR reiniciado com sucesso' });
 });
 
-// Rota para consultar uso de mensagens
 app.get('/mensagens-usadas', (req, res) => {
   const numero = req.query.numero;
   if (!numero || !agentesConfig[numero]) {
@@ -57,10 +55,16 @@ app.get('/mensagens-usadas', (req, res) => {
 
   const agentes = agentesConfig[numero];
   const total = agentes.reduce((acc, ag) => acc + (ag.mensagens || 0), 0);
-  res.json({ numero, mensagensUsadas: total });
+  const plano = agentes[0]?.plano || 'desconhecido';
+
+  res.json({
+    numero,
+    mensagensUsadas: total,
+    plano,
+    agentesAtivos: agentes.length
+  });
 });
 
-// Retorna o QR code como imagem base64
 app.get('/qrcode', (req, res) => {
   const numero = req.query.numero;
   if (verificados.has(numero)) {
@@ -71,7 +75,22 @@ app.get('/qrcode', (req, res) => {
   res.send(`<html><body><h2>Escaneie para conectar:</h2><img src="${qr}" /></body></html>`);
 });
 
-// Criação de agente e conexão
+app.get('/verificar', (req, res) => {
+  const numero = req.query.numero;
+  if (!numero) return res.status(400).json({ error: 'Número ausente' });
+
+  const conectado = verificados.has(numero);
+  res.json({ numero, conectado });
+});
+
+app.get('/historico', (req, res) => {
+  const numero = req.query.numero;
+  if (!numero) return res.status(400).json({ error: 'Número ausente' });
+
+  const historico = historicoIA[numero] || [];
+  res.json({ numero, historico });
+});
+
 app.post('/zapagent', async (req, res) => {
   const { nome, tipo, descricao, prompt, numero, plano, webhook } = req.body;
   if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
@@ -87,7 +106,7 @@ app.post('/zapagent', async (req, res) => {
     });
   }
 
-  agentesConfig[numero].push({
+  const novoAgente = {
     nome,
     tipo,
     descricao,
@@ -95,58 +114,39 @@ app.post('/zapagent', async (req, res) => {
     plano: planoAtual,
     mensagens: 0,
     webhook
-  });
+  };
+
+  agentesConfig[numero].push(novoAgente);
 
   if (!clientes[numero]) {
     conectarWhatsApp(numero);
   }
 
   console.log(`✅ Agente criado: ${nome} (${numero})`);
-  return res.json({ status: 'ok', msg: 'Agente criado com sucesso' });
+  return res.json({
+    status: 'ok',
+    msg: 'Agente criado com sucesso',
+    numero,
+    agente: novoAgente,
+    qrcodeUrl: `/qrcode?numero=${numero}`
+  });
 });
 
-// Integração com IA com memória temporária por número
 async function gerarRespostaIA(numero, mensagem, contexto) {
-  const apiKey = process.env.OPENROUTER_API_KEY;
-
-  if (!historicoIA[numero]) {
-    historicoIA[numero] = [
-      { role: 'system', content: contexto || 'Você é um agente inteligente.' }
-    ];
+  try {
+    const respostaAPI = await axios.post(`https://zapagent-api.onrender.com/responder/${numero}`, {
+      msg: mensagem,
+      prompt: contexto
+    });
+    const resposta = respostaAPI.data?.resposta;
+    if (!resposta) throw new Error('❌ Resposta vazia da API');
+    return resposta;
+  } catch (err) {
+    console.error('❌ Erro na comunicação com API:', err.message);
+    return '❌ Erro ao obter resposta da IA.';
   }
-
-  historicoIA[numero].push({ role: 'user', content: mensagem });
-
-  const data = {
-    model: 'nousresearch/deephermes-3-llama-3-8b-preview:free',
-    messages: historicoIA[numero]
-  };
-
-  const headers = {
-    Authorization: `Bearer ${apiKey}`,
-    'Content-Type': 'application/json',
-    'HTTP-Referer': 'https://zapagent-ai-builder.lovable.app',
-    'X-Title': 'ZapAgent AI'
-  };
-
-  const response = await axios.post(
-    'https://openrouter.ai/api/v1/chat/completions',
-    data,
-    { headers }
-  );
-
-  const resposta = response.data?.choices?.[0]?.message?.content;
-  if (!resposta) throw new Error('❌ Resposta vazia da IA');
-
-  historicoIA[numero].push({ role: 'assistant', content: resposta.trim() });
-
-  // Limita histórico a 10 interações por eficiência
-  if (historicoIA[numero].length > 20) historicoIA[numero].splice(1, 2);
-
-  return resposta.trim();
 }
 
-// Conexão dinâmica por número
 async function conectarWhatsApp(numero) {
   const pasta = path.join(__dirname, 'auth_info', numero);
   if (!fs.existsSync(pasta)) fs.mkdirSync(pasta, { recursive: true });
@@ -162,7 +162,6 @@ async function conectarWhatsApp(numero) {
   });
 
   clientes[numero] = sock;
-
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
@@ -198,7 +197,7 @@ async function conectarWhatsApp(numero) {
     const agentes = agentesConfig[senderNumero];
     if (!agentes || agentes.length === 0) return;
 
-    const agente = agentes[0];
+    const agente = agentes[0]; // ← futuramente: lógica de múltiplos agentes
     const plano = agente.plano.toLowerCase();
     const limite = limitesPlano[plano].maxMensagens;
 
@@ -214,7 +213,6 @@ async function conectarWhatsApp(numero) {
       await sock.sendMessage(de, { text: resposta });
       agente.mensagens += 1;
 
-      // 🔔 Envia para webhook se houver
       if (agente.webhook) {
         axios.post(agente.webhook, {
           numero: senderNumero,
@@ -235,5 +233,5 @@ app.listen(PORT, () =>
   console.log(`🌐 Servidor online em http://localhost:${PORT}`)
 );
 
-// Segurança: impede uso externo se chamado incorretamente
+// Segurança
 connectToWhatsApp = () => {};
