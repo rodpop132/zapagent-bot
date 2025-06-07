@@ -75,6 +75,22 @@ app.get('/qrcode', (req, res) => {
   res.send(`<html><body><h2>Escaneie para conectar:</h2><img src="${qr}" /></body></html>`);
 });
 
+// ✅ NOVA ROTA PARA USAR EM <img>
+app.get('/qrcode-imagem', (req, res) => {
+  const numero = req.query.numero;
+  const qr = qrStore[numero];
+  if (!qr) return res.status(404).send('QR não encontrado');
+
+  const base64Data = qr.replace(/^data:image\/png;base64,/, "");
+  const img = Buffer.from(base64Data, 'base64');
+
+  res.writeHead(200, {
+    'Content-Type': 'image/png',
+    'Content-Length': img.length
+  });
+  res.end(img);
+});
+
 app.get('/verificar', (req, res) => {
   const numero = req.query.numero;
   if (!numero) return res.status(400).json({ error: 'Número ausente' });
@@ -197,7 +213,7 @@ async function conectarWhatsApp(numero) {
     const agentes = agentesConfig[senderNumero];
     if (!agentes || agentes.length === 0) return;
 
-    const agente = agentes[0]; // ← futuramente: lógica de múltiplos agentes
+    const agente = agentes[0];
     const plano = agente.plano.toLowerCase();
     const limite = limitesPlano[plano].maxMensagens;
 
