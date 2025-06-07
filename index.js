@@ -209,14 +209,16 @@ async function conectarWhatsApp(numero) {
     const de = msg.key.remoteJid;
     const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
     const senderNumero = de.split('@')[0];
+    const botNumero = sock.user.id.split('@')[0];
 
     console.log('🔎 Mensagem de:', senderNumero);
     console.log('🔎 Conteúdo:', texto);
-    console.log('📚 Agentes disponíveis:', agentesConfig[senderNumero]);
+    console.log('🤖 Bot conectado como:', botNumero);
+    console.log('📚 Agentes disponíveis:', agentesConfig[botNumero]);
 
-    const agentes = agentesConfig[senderNumero];
+    const agentes = agentesConfig[botNumero];
     if (!agentes || agentes.length === 0) {
-      console.log('⚠️ Nenhum agente encontrado para este número');
+      console.log('⚠️ Nenhum agente encontrado para este bot');
       return;
     }
 
@@ -232,7 +234,7 @@ async function conectarWhatsApp(numero) {
     }
 
     try {
-      const resposta = await gerarRespostaIA(senderNumero, texto, agente.prompt);
+      const resposta = await gerarRespostaIA(botNumero, texto, agente.prompt);
       await sock.sendMessage(de, { text: resposta });
       agente.mensagens += 1;
 
