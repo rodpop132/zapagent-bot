@@ -28,10 +28,14 @@ const limitesPlano = {
   ultra: { maxMensagens: Infinity, maxAgentes: Infinity }
 };
 
+function normalizarNumero(numero) {
+  return numero.replace(/\D/g, '');
+}
+
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
 app.get('/qrcode-imagem', (req, res) => {
-  const numero = req.query.numero;
+  const numero = normalizarNumero(req.query.numero);
   const qr = qrStore[numero];
   if (!qr) return res.status(404).send('QR não encontrado');
 
@@ -50,7 +54,7 @@ app.get('/agentes', (req, res) => {
 });
 
 app.get('/reiniciar', async (req, res) => {
-  const numero = req.query.numero;
+  const numero = normalizarNumero(req.query.numero);
   if (!numero || !agentesConfig[numero]) {
     return res.status(400).json({ error: 'Número inválido ou sem agente' });
   }
@@ -63,7 +67,7 @@ app.get('/reiniciar', async (req, res) => {
 });
 
 app.get('/mensagens-usadas', (req, res) => {
-  const numero = req.query.numero;
+  const numero = normalizarNumero(req.query.numero);
   if (!numero || !agentesConfig[numero]) {
     return res.status(404).json({ error: 'Número não encontrado' });
   }
@@ -81,7 +85,7 @@ app.get('/mensagens-usadas', (req, res) => {
 });
 
 app.get('/qrcode', (req, res) => {
-  const numero = req.query.numero;
+  const numero = normalizarNumero(req.query.numero);
   if (verificados.has(numero)) {
     return res.status(200).send('✅ Número já conectado');
   }
@@ -91,7 +95,7 @@ app.get('/qrcode', (req, res) => {
 });
 
 app.get('/verificar', (req, res) => {
-  const numero = req.query.numero;
+  const numero = normalizarNumero(req.query.numero);
   if (!numero) return res.status(400).json({ error: 'Número ausente' });
 
   const conectado = verificados.has(numero);
@@ -99,7 +103,7 @@ app.get('/verificar', (req, res) => {
 });
 
 app.get('/historico', (req, res) => {
-  const numero = req.query.numero;
+  const numero = normalizarNumero(req.query.numero);
   if (!numero) return res.status(400).json({ error: 'Número ausente' });
 
   const historico = historicoIA[numero] || [];
@@ -107,9 +111,10 @@ app.get('/historico', (req, res) => {
 });
 
 app.post('/zapagent', async (req, res) => {
-  const { nome, tipo, descricao, prompt, numero, plano, webhook } = req.body;
+  let { nome, tipo, descricao, prompt, numero, plano, webhook } = req.body;
   if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
 
+  numero = normalizarNumero(numero);
   const planoAtual = plano?.toLowerCase() || 'gratuito';
   const limite = limitesPlano[planoAtual];
 
