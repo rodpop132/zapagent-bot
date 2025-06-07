@@ -214,7 +214,7 @@ async function conectarWhatsApp(numero) {
     const de = msg.key.remoteJid;
     const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
     const senderNumero = de.split('@')[0];
-    const botNumero = sock.user.id.split('@')[0];
+    const botNumero = normalizarNumero(sock.user.id.split('@')[0]);
 
     console.log('🔎 Mensagem de:', senderNumero);
     console.log('🔎 Conteúdo:', texto);
