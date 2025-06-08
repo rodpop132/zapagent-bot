@@ -15,13 +15,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const agentesConfig = {}; // { numero: [ { ...agente } ] }
-const qrStore = {};       // { numero: imagemBase64 }
-const clientes = {};      // { numero: socket WhatsApp }
-const verificados = new Set(); // números com QR confirmado
-const historicoIA = {};   // { numero: [ {role, content} ] }
+const agentesConfig = {};
+const qrStore = {};
+const clientes = {};
+const verificados = new Set();
+const historicoIA = {};
 
-// Planos atualizados conforme imagem
 const limitesPlano = {
   gratuito: { maxMensagens: 30, maxAgentes: 1 },
   pro: { maxMensagens: 10000, maxAgentes: 3 },
@@ -47,6 +46,35 @@ app.get('/qrcode-imagem', (req, res) => {
     'Content-Length': img.length
   });
   res.end(img);
+});
+
+app.get('/qrcode', (req, res) => {
+  const numero = normalizarNumero(req.query.numero);
+  if (!numero) return res.status(400).json({ error: 'Número não informado' });
+
+  if (verificados.has(numero)) {
+    return res.status(200).json({
+      conectado: true,
+      message: 'Agente já está conectado'
+    });
+  }
+
+  const qr = qrStore[numero];
+  if (!qr) {
+    return res.status(404).json({ error: 'QR code ainda não gerado' });
+  }
+
+  return res.status(200).json({
+    conectado: false,
+    qr_code: qr
+  });
+});
+
+app.get('/qrcode-html', (req, res) => {
+  const numero = normalizarNumero(req.query.numero);
+  const qr = qrStore[numero];
+  if (!qr) return res.status(404).send('QR não encontrado');
+  res.send(`<html><body><h2>Escaneie para conectar:</h2><img src="${qr}" /></body></html>`);
 });
 
 app.get('/agentes', (req, res) => {
@@ -82,16 +110,6 @@ app.get('/mensagens-usadas', (req, res) => {
     plano,
     agentesAtivos: agentes.length
   });
-});
-
-app.get('/qrcode', (req, res) => {
-  const numero = normalizarNumero(req.query.numero);
-  if (verificados.has(numero)) {
-    return res.status(200).send('✅ Número já conectado');
-  }
-  const qr = qrStore[numero];
-  if (!qr) return res.status(404).send('QR não encontrado');
-  res.send(`<html><body><h2>Escaneie para conectar:</h2><img src="${qr}" /></body></html>`);
 });
 
 app.get('/verificar', (req, res) => {
@@ -206,7 +224,6 @@ async function conectarWhatsApp(numero) {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    console.log('📩 Evento messages.upsert recebido');
     if (type !== 'notify') return;
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
@@ -216,16 +233,8 @@ async function conectarWhatsApp(numero) {
     const senderNumero = de.split('@')[0];
     const botNumero = normalizarNumero(sock.user.id.split('@')[0]);
 
-    console.log('🔎 Mensagem de:', senderNumero);
-    console.log('🔎 Conteúdo:', texto);
-    console.log('🤖 Bot conectado como:', botNumero);
-    console.log('📚 Agentes disponíveis:', agentesConfig[botNumero]);
-
     const agentes = agentesConfig[botNumero];
-    if (!agentes || agentes.length === 0) {
-      console.log('⚠️ Nenhum agente encontrado para este bot');
-      return;
-    }
+    if (!agentes || agentes.length === 0) return;
 
     const agente = agentes[0];
     const plano = agente.plano.toLowerCase();
@@ -262,6 +271,3 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () =>
   console.log(`🌐 Servidor online em http://localhost:${PORT}`)
 );
-
-// Segurança
-connectToWhatsApp = () => {};
