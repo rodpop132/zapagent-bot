@@ -33,6 +33,30 @@ function normalizarNumero(numero) {
 
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
+app.get('/qrcode', (req, res) => {
+  const numero = normalizarNumero(req.query.numero);
+
+  if (!numero) {
+    return res.status(400).json({ error: 'Número ausente' });
+  }
+
+  if (verificados.has(numero)) {
+    return res.json({ conectado: true, message: 'Agente já está conectado' });
+  }
+
+  const qr = qrStore[numero];
+
+  if (!qr) {
+    return res.status(404).json({ conectado: false, message: 'QR code ainda não gerado' });
+  }
+
+  return res.json({
+    conectado: false,
+    qr_code: qr,
+    message: 'QR code disponível'
+  });
+});
+
 app.get('/qrcode-imagem', (req, res) => {
   const numero = normalizarNumero(req.query.numero);
   const qr = qrStore[numero];
@@ -48,50 +72,12 @@ app.get('/qrcode-imagem', (req, res) => {
   res.end(img);
 });
 
-app.get('/qrcode', (req, res) => {
+app.get('/verificar', (req, res) => {
   const numero = normalizarNumero(req.query.numero);
-  if (!numero) return res.status(400).json({ error: 'Número não informado' });
+  if (!numero) return res.status(400).json({ error: 'Número ausente' });
 
-  if (verificados.has(numero)) {
-    return res.status(200).json({
-      conectado: true,
-      message: 'Agente já está conectado'
-    });
-  }
-
-  const qr = qrStore[numero];
-  if (!qr) {
-    return res.status(404).json({ error: 'QR code ainda não gerado' });
-  }
-
-  return res.status(200).json({
-    conectado: false,
-    qr_code: qr
-  });
-});
-
-app.get('/qrcode-html', (req, res) => {
-  const numero = normalizarNumero(req.query.numero);
-  const qr = qrStore[numero];
-  if (!qr) return res.status(404).send('QR não encontrado');
-  res.send(`<html><body><h2>Escaneie para conectar:</h2><img src="${qr}" /></body></html>`);
-});
-
-app.get('/agentes', (req, res) => {
-  res.json(agentesConfig);
-});
-
-app.get('/reiniciar', async (req, res) => {
-  const numero = normalizarNumero(req.query.numero);
-  if (!numero || !agentesConfig[numero]) {
-    return res.status(400).json({ error: 'Número inválido ou sem agente' });
-  }
-
-  verificados.delete(numero);
-  delete qrStore[numero];
-  delete clientes[numero];
-  await conectarWhatsApp(numero);
-  res.json({ status: 'ok', msg: 'QR reiniciado com sucesso' });
+  const conectado = verificados.has(numero);
+  res.json({ numero, conectado });
 });
 
 app.get('/mensagens-usadas', (req, res) => {
@@ -112,20 +98,25 @@ app.get('/mensagens-usadas', (req, res) => {
   });
 });
 
-app.get('/verificar', (req, res) => {
-  const numero = normalizarNumero(req.query.numero);
-  if (!numero) return res.status(400).json({ error: 'Número ausente' });
-
-  const conectado = verificados.has(numero);
-  res.json({ numero, conectado });
-});
-
 app.get('/historico', (req, res) => {
   const numero = normalizarNumero(req.query.numero);
   if (!numero) return res.status(400).json({ error: 'Número ausente' });
 
   const historico = historicoIA[numero] || [];
   res.json({ numero, historico });
+});
+
+app.get('/reiniciar', async (req, res) => {
+  const numero = normalizarNumero(req.query.numero);
+  if (!numero || !agentesConfig[numero]) {
+    return res.status(400).json({ error: 'Número inválido ou sem agente' });
+  }
+
+  verificados.delete(numero);
+  delete qrStore[numero];
+  delete clientes[numero];
+  await conectarWhatsApp(numero);
+  res.json({ status: 'ok', msg: 'QR reiniciado com sucesso' });
 });
 
 app.post('/zapagent', async (req, res) => {
@@ -224,6 +215,7 @@ async function conectarWhatsApp(numero) {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    console.log('📩 Evento messages.upsert recebido');
     if (type !== 'notify') return;
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
@@ -233,8 +225,14 @@ async function conectarWhatsApp(numero) {
     const senderNumero = de.split('@')[0];
     const botNumero = normalizarNumero(sock.user.id.split('@')[0]);
 
+    console.log('🔎 Mensagem de:', senderNumero);
+    console.log('🔎 Conteúdo:', texto);
+
     const agentes = agentesConfig[botNumero];
-    if (!agentes || agentes.length === 0) return;
+    if (!agentes || agentes.length === 0) {
+      console.log('⚠️ Nenhum agente encontrado para este bot');
+      return;
+    }
 
     const agente = agentes[0];
     const plano = agente.plano.toLowerCase();
