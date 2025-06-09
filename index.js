@@ -47,7 +47,7 @@ app.get('/qrcode', (req, res) => {
   const qr = qrStore[numero];
 
   if (!qr) {
-    return res.status(404).json({ conectado: false, message: 'QR code ainda não gerado' });
+    return res.status(202).json({ conectado: false, message: 'QR code ainda não gerado' });
   }
 
   return res.json({
