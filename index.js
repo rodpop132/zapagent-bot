@@ -34,27 +34,36 @@ function normalizarNumero(numero) {
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
 app.get('/qrcode', (req, res) => {
-  const numero = normalizarNumero(req.query.numero);
+  try {
+    const numero = normalizarNumero(req.query.numero);
 
-  if (!numero) {
-    return res.status(400).json({ error: 'Número ausente' });
+    if (!numero) {
+      return res.status(400).json({ conectado: false, message: 'Número ausente' });
+    }
+
+    if (verificados.has(numero)) {
+      return res.json({ conectado: true, message: 'Agente já está conectado' });
+    }
+
+    const qr = qrStore[numero];
+
+    if (!qr) {
+      return res.status(202).json({ conectado: false, message: 'QR code ainda não gerado' });
+    }
+
+    return res.json({
+      conectado: false,
+      qr_code: qr,
+      message: 'QR code disponível'
+    });
+
+  } catch (err) {
+    console.error('❌ Erro interno em /qrcode:', err);
+    return res.status(500).json({
+      conectado: false,
+      message: 'Erro interno ao processar QR code'
+    });
   }
-
-  if (verificados.has(numero)) {
-    return res.json({ conectado: true, message: 'Agente já está conectado' });
-  }
-
-  const qr = qrStore[numero];
-
-  if (!qr) {
-    return res.status(202).json({ conectado: false, message: 'QR code ainda não gerado' });
-  }
-
-  return res.json({
-    conectado: false,
-    qr_code: qr,
-    message: 'QR code disponível'
-  });
 });
 
 app.get('/qrcode-imagem', (req, res) => {
@@ -197,9 +206,13 @@ async function conectarWhatsApp(numero) {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr && !verificados.has(numero)) {
-      const base64 = await qrcode.toDataURL(qr);
-      qrStore[numero] = base64;
-      console.log(`📷 QR gerado para ${numero}`);
+      try {
+        const base64 = await qrcode.toDataURL(qr);
+        qrStore[numero] = base64;
+        console.log(`📷 QR gerado para ${numero}`);
+      } catch (err) {
+        console.error(`❌ Erro ao gerar QR base64 para ${numero}:`, err);
+      }
     }
 
     if (connection === 'close') {
