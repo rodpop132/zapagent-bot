@@ -33,47 +33,49 @@ function normalizarNumero(numero) {
 
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
-// GET QR CODE
+// ✅ ROTA CORRIGIDA PARA RETORNAR JSON VÁLIDO SEMPRE
 app.get('/qrcode', (req, res) => {
   try {
-    const numero = normalizarNumero(req.query.numero);
-    if (!numero) return res.status(400).json({ conectado: false, message: 'Número ausente' });
+    const numero = normalizarNumero(req.query.numero || '');
+    if (!numero) {
+      return res.status(400).json({
+        conectado: false,
+        qr_code: null,
+        message: 'Número ausente ou inválido'
+      });
+    }
 
     if (verificados.has(numero)) {
-      return res.json({ conectado: true, message: 'Agente já está conectado' });
+      return res.json({
+        conectado: true,
+        qr_code: null,
+        message: 'Agente já está conectado'
+      });
     }
 
     const qr = qrStore[numero];
     if (!qr) {
-      return res.status(202).json({ conectado: false, message: 'QR code ainda não gerado' });
+      return res.status(202).json({
+        conectado: false,
+        qr_code: null,
+        message: 'QR code ainda não gerado'
+      });
     }
 
     return res.json({
       conectado: false,
       qr_code: qr,
-      message: 'Código QR disponível'
+      message: 'QR code disponível'
     });
 
   } catch (err) {
     console.error('❌ Erro interno em /qrcode:', err);
-    return res.status(500).json({ conectado: false, message: 'Erro interno ao processar código QR' });
+    return res.status(500).json({
+      conectado: false,
+      qr_code: null,
+      message: 'Erro interno ao processar código QR'
+    });
   }
-});
-
-// GET QR CODE IMAGE
-app.get('/qrcode-imagem', (req, res) => {
-  const numero = normalizarNumero(req.query.numero);
-  const qr = qrStore[numero];
-  if (!qr) return res.status(404).send('QR não encontrado');
-
-  const base64Data = qr.replace(/^data:image\/png;base64,/, "");
-  const img = Buffer.from(base64Data, 'base64');
-
-  res.writeHead(200, {
-    'Content-Type': 'image/png',
-    'Content-Length': img.length
-  });
-  res.end(img);
 });
 
 app.get('/verificar', (req, res) => {
@@ -110,7 +112,6 @@ app.get('/historico', (req, res) => {
   res.json({ numero, historico });
 });
 
-// REINICIAR AGENTE
 app.get('/reiniciar', async (req, res) => {
   const numero = normalizarNumero(req.query.numero);
   if (!numero || !agentesConfig[numero]) {
@@ -125,7 +126,7 @@ app.get('/reiniciar', async (req, res) => {
   res.json({ status: 'ok', msg: 'QR reiniciado com sucesso' });
 });
 
-// CRIAR AGENTE
+// ✅ CRIAÇÃO DE AGENTE
 app.post('/zapagent', async (req, res) => {
   let { nome, tipo, descricao, prompt, numero, plano, webhook } = req.body;
   if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
