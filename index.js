@@ -163,6 +163,15 @@ app.post('/zapagent', async (req, res) => {
   try {
     await conectarWhatsApp(numero);
 
+    // ✅ Reinicia o QR automaticamente após 2s
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      await axios.get(`https://zapagent-bot.onrender.com/reiniciar?numero=${numero}`);
+      console.log('✅ Reinicialização do QR acionada com sucesso');
+    } catch (reiniciarError) {
+      console.warn('⚠️ Falha ao acionar reinicialização do QR:', reiniciarError.message);
+    }
+
     const aguardarQr = async () => {
       for (let i = 0; i < 20; i++) {
         if (qrStore[numero]) return true;
@@ -254,7 +263,7 @@ async function conectarWhatsApp(numero) {
     const botNumero = normalizarNumero(sock.user.id.split('@')[0]);
 
     const agentes = agentesConfig[botNumero] || [];
-    const agente = agentes[0]; // ou usa lógica para escolher agente por senderNumero, se quiser
+    const agente = agentes[0];
 
     if (!agente) {
       console.log(`⚠️ Nenhum agente ativo para o número ${botNumero}`);
