@@ -13,7 +13,7 @@ const fs = require('fs');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 
 const agentesConfig = {};
 const qrStore = {};
@@ -133,44 +133,51 @@ app.get('/historico', (req, res) => {
 });
 
 app.post('/zapagent', async (req, res) => {
-  let { nome, tipo, descricao, prompt, numero, plano, webhook } = req.body;
-  if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
-
-  numero = normalizarNumero(numero);
-  const planoAtual = plano?.toLowerCase() || 'gratuito';
-  const limite = limitesPlano[planoAtual];
-
-  if (!agentesConfig[numero]) agentesConfig[numero] = [];
-
-  if (agentesConfig[numero].length >= limite.maxAgentes) {
-    return res.status(403).json({
-      error: `⚠️ Limite de agentes (${limite.maxAgentes}) atingido para o plano ${planoAtual}`
-    });
-  }
-
-  const novoAgente = {
-    nome,
-    tipo,
-    descricao,
-    prompt,
-    plano: planoAtual,
-    mensagens: 0,
-    webhook
-  };
-
-  agentesConfig[numero].push(novoAgente);
-
   try {
+    let { nome, tipo, descricao, prompt, numero, plano, webhook } = req.body || {};
+    if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
+
+    numero = normalizarNumero(numero);
+    const planoAtual = plano?.toLowerCase() || 'gratuito';
+    const limite = limitesPlano[planoAtual] || limitesPlano.gratuito;
+
+    if (!agentesConfig[numero]) agentesConfig[numero] = [];
+
+    if (agentesConfig[numero].length >= limite.maxAgentes) {
+      return res.status(403).json({
+        error: `⚠️ Limite de agentes (${limite.maxAgentes}) atingido para o plano ${planoAtual}`
+      });
+    }
+
+    const novoAgente = {
+      nome: nome || 'Agente',
+      tipo: tipo || 'padrão',
+      descricao: descricao || '',
+      prompt,
+      plano: planoAtual,
+      mensagens: 0,
+      webhook: webhook || null
+    };
+
+    agentesConfig[numero].push(novoAgente);
+
     await conectarWhatsApp(numero);
 
-    // ✅ Reinicia o QR automaticamente após 2s
+    const reiniciarQR = async () => {
+      for (let tentativas = 0; tentativas < 3; tentativas++) {
+        try {
+          await axios.get(`https://zapagent-bot.onrender.com/reiniciar?numero=${numero}`);
+          console.log('✅ Reinicialização do QR acionada com sucesso');
+          break;
+        } catch (reiniciarError) {
+          console.warn('⚠️ Tentativa de reinicialização falhou:', reiniciarError.message);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+    };
+
     await new Promise(resolve => setTimeout(resolve, 2000));
-    try {
-      await axios.get(`https://zapagent-bot.onrender.com/reiniciar?numero=${numero}`);
-      console.log('✅ Reinicialização do QR acionada com sucesso');
-    } catch (reiniciarError) {
-      console.warn('⚠️ Falha ao acionar reinicialização do QR:', reiniciarError.message);
-    }
+    await reiniciarQR();
 
     const aguardarQr = async () => {
       for (let i = 0; i < 20; i++) {
@@ -191,8 +198,8 @@ app.post('/zapagent', async (req, res) => {
     });
 
   } catch (err) {
-    console.error('❌ Erro ao conectar WhatsApp:', err);
-    return res.status(500).json({ error: 'Erro ao conectar WhatsApp' });
+    console.error('❌ Erro inesperado ao criar agente:', err);
+    return res.status(500).json({ error: 'Erro interno ao criar agente' });
   }
 });
 
