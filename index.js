@@ -33,20 +33,17 @@ function normalizarNumero(numero) {
 
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
+// GET QR CODE
 app.get('/qrcode', (req, res) => {
   try {
     const numero = normalizarNumero(req.query.numero);
-
-    if (!numero) {
-      return res.status(400).json({ conectado: false, message: 'Número ausente' });
-    }
+    if (!numero) return res.status(400).json({ conectado: false, message: 'Número ausente' });
 
     if (verificados.has(numero)) {
       return res.json({ conectado: true, message: 'Agente já está conectado' });
     }
 
     const qr = qrStore[numero];
-
     if (!qr) {
       return res.status(202).json({ conectado: false, message: 'QR code ainda não gerado' });
     }
@@ -54,18 +51,16 @@ app.get('/qrcode', (req, res) => {
     return res.json({
       conectado: false,
       qr_code: qr,
-      message: 'QR code disponível'
+      message: 'Código QR disponível'
     });
 
   } catch (err) {
     console.error('❌ Erro interno em /qrcode:', err);
-    return res.status(500).json({
-      conectado: false,
-      message: 'Erro interno ao processar QR code'
-    });
+    return res.status(500).json({ conectado: false, message: 'Erro interno ao processar código QR' });
   }
 });
 
+// GET QR CODE IMAGE
 app.get('/qrcode-imagem', (req, res) => {
   const numero = normalizarNumero(req.query.numero);
   const qr = qrStore[numero];
@@ -115,6 +110,7 @@ app.get('/historico', (req, res) => {
   res.json({ numero, historico });
 });
 
+// REINICIAR AGENTE
 app.get('/reiniciar', async (req, res) => {
   const numero = normalizarNumero(req.query.numero);
   if (!numero || !agentesConfig[numero]) {
@@ -124,10 +120,12 @@ app.get('/reiniciar', async (req, res) => {
   verificados.delete(numero);
   delete qrStore[numero];
   delete clientes[numero];
+
   await conectarWhatsApp(numero);
   res.json({ status: 'ok', msg: 'QR reiniciado com sucesso' });
 });
 
+// CRIAR AGENTE
 app.post('/zapagent', async (req, res) => {
   let { nome, tipo, descricao, prompt, numero, plano, webhook } = req.body;
   if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
@@ -156,18 +154,31 @@ app.post('/zapagent', async (req, res) => {
 
   agentesConfig[numero].push(novoAgente);
 
-  if (!clientes[numero]) {
-    conectarWhatsApp(numero);
-  }
+  try {
+    await conectarWhatsApp(numero);
 
-  console.log(`✅ Agente criado: ${nome} (${numero})`);
-  return res.json({
-    status: 'ok',
-    msg: 'Agente criado com sucesso',
-    numero,
-    agente: novoAgente,
-    qrcodeUrl: `/qrcode?numero=${numero}`
-  });
+    const aguardarQr = async () => {
+      for (let i = 0; i < 20; i++) {
+        if (qrStore[numero]) return true;
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      return false;
+    };
+
+    const qrPronto = await aguardarQr();
+
+    return res.json({
+      status: 'ok',
+      msg: qrPronto ? 'Agente criado com sucesso' : 'Agente criado, mas QR ainda não gerado',
+      numero,
+      agente: novoAgente,
+      qrcodeUrl: `/qrcode?numero=${numero}`
+    });
+
+  } catch (err) {
+    console.error('❌ Erro ao conectar WhatsApp:', err);
+    return res.status(500).json({ error: 'Erro ao conectar WhatsApp' });
+  }
 });
 
 async function gerarRespostaIA(numero, mensagem, contexto) {
@@ -216,8 +227,7 @@ async function conectarWhatsApp(numero) {
     }
 
     if (connection === 'close') {
-      const shouldReconnect =
-        lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+      const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
       console.log(`❌ ${numero} desconectado`);
       if (shouldReconnect) conectarWhatsApp(numero);
     } else if (connection === 'open') {
@@ -279,6 +289,4 @@ async function conectarWhatsApp(numero) {
 }
 
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () =>
-  console.log(`🌐 Servidor online em http://localhost:${PORT}`)
-);
+app.listen(PORT, () => console.log(`🌐 Servidor online em http://localhost:${PORT}`));
