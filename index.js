@@ -77,7 +77,6 @@ app.get('/qrcode', (req, res) => {
   }
 });
 
-// ✅ Reiniciar agente - versão forçada
 app.get('/reiniciar', async (req, res) => {
   const numero = normalizarNumero(req.query.numero);
   if (!numero) {
@@ -251,13 +250,17 @@ async function conectarWhatsApp(numero) {
 
     const de = msg.key.remoteJid;
     const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-    const senderNumero = de.split('@')[0];
+    const senderNumero = normalizarNumero(de.split('@')[0]);
     const botNumero = normalizarNumero(sock.user.id.split('@')[0]);
 
-    const agentes = agentesConfig[botNumero];
-    if (!agentes || agentes.length === 0) return;
+    const agentes = agentesConfig[botNumero] || [];
+    const agente = agentes[0]; // ou usa lógica para escolher agente por senderNumero, se quiser
 
-    const agente = agentes[0];
+    if (!agente) {
+      console.log(`⚠️ Nenhum agente ativo para o número ${botNumero}`);
+      return;
+    }
+
     const plano = agente.plano.toLowerCase();
     const limite = limitesPlano[plano].maxMensagens;
 
