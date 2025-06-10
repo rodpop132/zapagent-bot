@@ -33,7 +33,6 @@ function normalizarNumero(numero) {
 
 app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 
-// ✅ ROTA CORRIGIDA PARA RETORNAR JSON VÁLIDO SEMPRE
 app.get('/qrcode', (req, res) => {
   try {
     const numero = normalizarNumero(req.query.numero || '');
@@ -78,6 +77,28 @@ app.get('/qrcode', (req, res) => {
   }
 });
 
+// ✅ Reiniciar agente - versão forçada
+app.get('/reiniciar', async (req, res) => {
+  const numero = normalizarNumero(req.query.numero);
+  if (!numero) {
+    return res.status(400).json({ error: 'Número ausente ou inválido' });
+  }
+
+  try {
+    verificados.delete(numero);
+    delete qrStore[numero];
+    delete clientes[numero];
+
+    console.log(`♻️ Reiniciando agente manualmente para ${numero}...`);
+    await conectarWhatsApp(numero);
+
+    return res.json({ status: 'ok', msg: 'QR reiniciado com sucesso (modo forçado)' });
+  } catch (err) {
+    console.error('❌ Erro ao reiniciar agente:', err);
+    return res.status(500).json({ error: 'Erro ao reiniciar agente' });
+  }
+});
+
 app.get('/verificar', (req, res) => {
   const numero = normalizarNumero(req.query.numero);
   if (!numero) return res.status(400).json({ error: 'Número ausente' });
@@ -112,21 +133,6 @@ app.get('/historico', (req, res) => {
   res.json({ numero, historico });
 });
 
-app.get('/reiniciar', async (req, res) => {
-  const numero = normalizarNumero(req.query.numero);
-  if (!numero || !agentesConfig[numero]) {
-    return res.status(400).json({ error: 'Número inválido ou sem agente' });
-  }
-
-  verificados.delete(numero);
-  delete qrStore[numero];
-  delete clientes[numero];
-
-  await conectarWhatsApp(numero);
-  res.json({ status: 'ok', msg: 'QR reiniciado com sucesso' });
-});
-
-// ✅ CRIAÇÃO DE AGENTE
 app.post('/zapagent', async (req, res) => {
   let { nome, tipo, descricao, prompt, numero, plano, webhook } = req.body;
   if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
@@ -239,7 +245,6 @@ async function conectarWhatsApp(numero) {
   });
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    console.log('📩 Evento messages.upsert recebido');
     if (type !== 'notify') return;
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
@@ -249,14 +254,8 @@ async function conectarWhatsApp(numero) {
     const senderNumero = de.split('@')[0];
     const botNumero = normalizarNumero(sock.user.id.split('@')[0]);
 
-    console.log('🔎 Mensagem de:', senderNumero);
-    console.log('🔎 Conteúdo:', texto);
-
     const agentes = agentesConfig[botNumero];
-    if (!agentes || agentes.length === 0) {
-      console.log('⚠️ Nenhum agente encontrado para este bot');
-      return;
-    }
+    if (!agentes || agentes.length === 0) return;
 
     const agente = agentes[0];
     const plano = agente.plano.toLowerCase();
