@@ -15,7 +15,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-const agentesConfig = {};
+const agentesConfig = {}; // user_id -> numero -> agentes[]
 const qrStore = {};
 const clientes = {};
 const verificados = new Set();
@@ -36,44 +36,17 @@ app.get('/', (_, res) => res.send('✅ ZapAgent Bot ativo'));
 app.get('/qrcode', (req, res) => {
   try {
     const numero = normalizarNumero(req.query.numero || '');
-    if (!numero) {
-      return res.status(400).json({
-        conectado: false,
-        qr_code: null,
-        message: 'Número ausente ou inválido'
-      });
-    }
-
-    if (verificados.has(numero)) {
-      return res.json({
-        conectado: true,
-        qr_code: null,
-        message: 'Agente já está conectado'
-      });
-    }
+    if (!numero) return res.status(400).json({ conectado: false, qr_code: null, message: 'Número ausente ou inválido' });
+    if (verificados.has(numero)) return res.json({ conectado: true, qr_code: null, message: 'Agente já está conectado' });
 
     const qr = qrStore[numero];
-    if (!qr) {
-      return res.status(202).json({
-        conectado: false,
-        qr_code: null,
-        message: 'QR code ainda não gerado'
-      });
-    }
+    if (!qr) return res.status(202).json({ conectado: false, qr_code: null, message: 'QR code ainda não gerado' });
 
-    return res.json({
-      conectado: false,
-      qr_code: qr,
-      message: 'QR code disponível'
-    });
+    return res.json({ conectado: false, qr_code: qr, message: 'QR code disponível' });
 
   } catch (err) {
     console.error('❌ Erro interno em /qrcode:', err);
-    return res.status(500).json({
-      conectado: false,
-      qr_code: null,
-      message: 'Erro interno ao processar código QR'
-    });
+    return res.status(500).json({ conectado: false, qr_code: null, message: 'Erro interno ao processar código QR' });
   }
 });
 
@@ -99,18 +72,18 @@ app.get('/reiniciar', async (req, res) => {
 app.get('/verificar', (req, res) => {
   const numero = normalizarNumero(req.query.numero);
   if (!numero) return res.status(400).json({ error: 'Número ausente' });
-
   const conectado = verificados.has(numero);
   res.json({ numero, conectado });
 });
 
 app.get('/mensagens-usadas', (req, res) => {
+  const user_id = req.query.user_id;
   const numero = normalizarNumero(req.query.numero);
-  if (!numero || !agentesConfig[numero]) {
-    return res.status(404).json({ error: 'Número não encontrado' });
+  if (!user_id || !numero || !agentesConfig[user_id]?.[numero]) {
+    return res.status(404).json({ error: 'Agente não encontrado' });
   }
 
-  const agentes = agentesConfig[numero];
+  const agentes = agentesConfig[user_id][numero];
   const total = agentes.reduce((acc, ag) => acc + (ag.mensagens || 0), 0);
   const plano = agentes[0]?.plano || 'desconhecido';
 
@@ -123,11 +96,12 @@ app.get('/mensagens-usadas', (req, res) => {
 });
 
 app.get('/historico', (req, res) => {
+  const user_id = req.query.user_id;
   const numero = normalizarNumero(req.query.numero);
-  if (!numero) return res.status(400).json({ error: 'Número ausente' });
+  if (!user_id || !numero) return res.status(400).json({ error: 'Parâmetros ausentes' });
 
   const historico = [];
-  const prefixo = `${numero}-`;
+  const prefixo = `${user_id}-${numero}-`;
 
   for (const key in historicoIA) {
     if (key.startsWith(prefixo)) {
@@ -140,19 +114,18 @@ app.get('/historico', (req, res) => {
 
 app.post('/zapagent', async (req, res) => {
   try {
-    let { nome, tipo, descricao, prompt, numero, plano, webhook } = req.body || {};
-    if (!numero || !prompt) return res.status(400).json({ error: 'Número ou prompt ausente' });
+    let { user_id, nome, tipo, descricao, prompt, numero, plano, webhook } = req.body || {};
+    if (!user_id || !numero || !prompt) return res.status(400).json({ error: 'user_id, número ou prompt ausente' });
 
     numero = normalizarNumero(numero);
     const planoAtual = plano?.toLowerCase() || 'gratuito';
     const limite = limitesPlano[planoAtual] || limitesPlano.gratuito;
 
-    if (!agentesConfig[numero]) agentesConfig[numero] = [];
+    if (!agentesConfig[user_id]) agentesConfig[user_id] = {};
+    if (!agentesConfig[user_id][numero]) agentesConfig[user_id][numero] = [];
 
-    if (agentesConfig[numero].length >= limite.maxAgentes) {
-      return res.status(403).json({
-        error: `⚠️ Limite de agentes (${limite.maxAgentes}) atingido para o plano ${planoAtual}`
-      });
+    if (agentesConfig[user_id][numero].length >= limite.maxAgentes) {
+      return res.status(403).json({ error: `⚠️ Limite de agentes (${limite.maxAgentes}) atingido para o plano ${planoAtual}` });
     }
 
     const novoAgente = {
@@ -162,10 +135,11 @@ app.post('/zapagent', async (req, res) => {
       prompt,
       plano: planoAtual,
       mensagens: 0,
-      webhook: webhook || null
+      webhook: webhook || null,
+      user_id
     };
 
-    agentesConfig[numero].push(novoAgente);
+    agentesConfig[user_id][numero].push(novoAgente);
 
     await conectarWhatsApp(numero);
 
@@ -175,8 +149,7 @@ app.post('/zapagent', async (req, res) => {
           await axios.get(`https://zapagent-bot.onrender.com/reiniciar?numero=${numero}`);
           console.log('✅ Reinicialização do QR acionada com sucesso');
           break;
-        } catch (reiniciarError) {
-          console.warn('⚠️ Tentativa de reinicialização falhou:', reiniciarError.message);
+        } catch {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
       }
@@ -199,6 +172,7 @@ app.post('/zapagent', async (req, res) => {
       status: 'ok',
       msg: qrPronto ? 'Agente criado com sucesso' : 'Agente criado, mas QR ainda não gerado',
       numero,
+      user_id,
       agente: novoAgente,
       qrcodeUrl: `/qrcode?numero=${numero}`
     });
@@ -209,9 +183,9 @@ app.post('/zapagent', async (req, res) => {
   }
 });
 
-async function gerarRespostaIA(numero, mensagem, contexto, agenteNome = 'agente') {
+async function gerarRespostaIA(numero, mensagem, contexto, agenteNome = 'agente', user_id = 'default') {
   try {
-    const agent_id = `${numero}-${agenteNome.replace(/\s+/g, '_').toLowerCase()}`;
+    const agent_id = `${user_id}-${numero}-${agenteNome.replace(/\s+/g, '_').toLowerCase()}`;
     const { data } = await axios.post(`https://zapagent-api.onrender.com/responder/${numero}`, {
       msg: mensagem,
       prompt: contexto,
@@ -254,12 +228,8 @@ async function conectarWhatsApp(numero) {
         const base64 = await qrcode.toDataURL(qr);
         qrStore[numero] = base64;
         console.log(`📷 QR gerado para ${numero}`);
-
         setTimeout(() => {
-          if (qrStore[numero]) {
-            delete qrStore[numero];
-            console.log(`🕒 QR code expirado para ${numero}`);
-          }
+          if (qrStore[numero]) delete qrStore[numero];
         }, 5 * 60 * 1000);
       } catch (err) {
         console.error(`❌ Erro ao gerar QR base64 para ${numero}:`, err);
@@ -287,47 +257,41 @@ async function conectarWhatsApp(numero) {
     const senderNumero = normalizarNumero(de.split('@')[0]);
     const botNumero = normalizarNumero(sock.user.id.split('@')[0]);
 
-    const agentes = agentesConfig[botNumero] || [];
-    const agente = agentes[0];
+    for (const user_id in agentesConfig) {
+      const agentes = agentesConfig[user_id]?.[botNumero];
+      if (!agentes || agentes.length === 0) continue;
+      const agente = agentes[0];
 
-    if (!agente) {
-      console.log(`⚠️ Nenhum agente ativo para o número ${botNumero}`);
-      return;
-    }
+      const plano = agente.plano.toLowerCase();
+      const limite = limitesPlano[plano].maxMensagens;
 
-    const plano = agente.plano.toLowerCase();
-    const limite = limitesPlano[plano].maxMensagens;
-
-    if (agente.mensagens >= limite) {
-      await sock.sendMessage(de, {
-        text: `⚠️ Limite de mensagens do plano (${plano}) atingido.`
-      });
-      return;
-    }
-
-    try {
-      const resposta = await gerarRespostaIA(botNumero, texto, agente.prompt, agente.nome);
-      await sock.sendMessage(de, { text: resposta });
-      agente.mensagens += 1;
-
-      const agent_id = `${botNumero}-${agente.nome.replace(/\s+/g, '_').toLowerCase()}`;
-      if (!historicoIA[agent_id]) historicoIA[agent_id] = [];
-      historicoIA[agent_id].push({ user: texto, bot: resposta });
-      if (historicoIA[agent_id].length > 100) {
-        historicoIA[agent_id] = historicoIA[agent_id].slice(-100);
+      if (agente.mensagens >= limite) {
+        await sock.sendMessage(de, { text: `⚠️ Limite de mensagens do plano (${plano}) atingido.` });
+        return;
       }
 
-      if (agente.webhook) {
-        axios.post(agente.webhook, {
-          numero: senderNumero,
-          pergunta: texto,
-          resposta
-        }).catch(err => console.log('Webhook erro:', err.message));
-      }
+      try {
+        const resposta = await gerarRespostaIA(botNumero, texto, agente.prompt, agente.nome, user_id);
+        await sock.sendMessage(de, { text: resposta });
+        agente.mensagens += 1;
 
-    } catch (err) {
-      console.error('❌ Erro IA:', err);
-      await sock.sendMessage(de, { text: '❌ Erro ao gerar resposta da IA.' });
+        const agent_id = `${user_id}-${botNumero}-${agente.nome.replace(/\s+/g, '_').toLowerCase()}`;
+        if (!historicoIA[agent_id]) historicoIA[agent_id] = [];
+        historicoIA[agent_id].push({ user: texto, bot: resposta });
+        if (historicoIA[agent_id].length > 100) historicoIA[agent_id] = historicoIA[agent_id].slice(-100);
+
+        if (agente.webhook) {
+          axios.post(agente.webhook, {
+            numero: senderNumero,
+            pergunta: texto,
+            resposta
+          }).catch(err => console.log('Webhook erro:', err.message));
+        }
+
+      } catch (err) {
+        console.error('❌ Erro IA:', err);
+        await sock.sendMessage(de, { text: '❌ Erro ao gerar resposta da IA.' });
+      }
     }
   });
 }
