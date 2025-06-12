@@ -79,9 +79,7 @@ app.get('/qrcode', (req, res) => {
 
 app.get('/reiniciar', async (req, res) => {
   const numero = normalizarNumero(req.query.numero);
-  if (!numero) {
-    return res.status(400).json({ error: 'Número ausente ou inválido' });
-  }
+  if (!numero) return res.status(400).json({ error: 'Número ausente ou inválido' });
 
   try {
     verificados.delete(numero);
