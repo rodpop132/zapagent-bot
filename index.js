@@ -186,6 +186,7 @@ app.post('/zapagent', async (req, res) => {
 async function gerarRespostaIA(numero, mensagem, contexto, agenteNome = 'agente', user_id = 'default') {
   try {
     const agent_id = `${user_id}-${numero}-${agenteNome.replace(/\s+/g, '_').toLowerCase()}`;
+    console.log(`🔍 [IA] Preparando chamada para ${agent_id}`);
     const { data } = await axios.post(`https://zapagent-api.onrender.com/responder/${numero}`, {
       msg: mensagem,
       prompt: contexto,
@@ -249,6 +250,7 @@ async function conectarWhatsApp(numero) {
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
+
     const msg = messages[0];
     if (!msg.message || msg.key.fromMe) return;
 
@@ -257,11 +259,19 @@ async function conectarWhatsApp(numero) {
     const senderNumero = normalizarNumero(de.split('@')[0]);
     const botNumero = normalizarNumero(sock.user.id.split('@')[0]);
 
+    console.log('📩 Mensagem recebida de:', senderNumero);
+    console.log('📨 Conteúdo:', texto);
+    console.log('🤖 Bot conectado como:', botNumero);
+
+    let agenteEncontrado = false;
+
     for (const user_id in agentesConfig) {
       const agentes = agentesConfig[user_id]?.[botNumero];
       if (!agentes || agentes.length === 0) continue;
-      const agente = agentes[0];
 
+      agenteEncontrado = true;
+
+      const agente = agentes[0];
       const plano = agente.plano.toLowerCase();
       const limite = limitesPlano[plano].maxMensagens;
 
@@ -271,7 +281,10 @@ async function conectarWhatsApp(numero) {
       }
 
       try {
+        console.log(`🧠 Chamando IA para ${senderNumero} com o prompt do agente ${agente.nome}...`);
         const resposta = await gerarRespostaIA(botNumero, texto, agente.prompt, agente.nome, user_id);
+        console.log('✅ Resposta IA recebida:', resposta);
+
         await sock.sendMessage(de, { text: resposta });
         agente.mensagens += 1;
 
@@ -292,6 +305,10 @@ async function conectarWhatsApp(numero) {
         console.error('❌ Erro IA:', err);
         await sock.sendMessage(de, { text: '❌ Erro ao gerar resposta da IA.' });
       }
+    }
+
+    if (!agenteEncontrado) {
+      console.warn(`⚠️ Nenhum agente ativo encontrado para ${botNumero}`);
     }
   });
 }
