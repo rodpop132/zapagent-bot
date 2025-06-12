@@ -128,8 +128,16 @@ app.get('/historico', (req, res) => {
   const numero = normalizarNumero(req.query.numero);
   if (!numero) return res.status(400).json({ error: 'Número ausente' });
 
-  const historico = historicoIA[numero] || [];
-  res.json({ numero, historico });
+  const historico = [];
+  const prefixo = `${numero}-`;
+
+  for (const key in historicoIA) {
+    if (key.startsWith(prefixo)) {
+      historico.push(...historicoIA[key]);
+    }
+  }
+
+  res.json({ numero, historico: historico.slice(-100) });
 });
 
 app.post('/zapagent', async (req, res) => {
@@ -203,11 +211,13 @@ app.post('/zapagent', async (req, res) => {
   }
 });
 
-async function gerarRespostaIA(numero, mensagem, contexto) {
+async function gerarRespostaIA(numero, mensagem, contexto, agenteNome = 'agente') {
   try {
+    const agent_id = `${numero}-${agenteNome.replace(/\s+/g, '_').toLowerCase()}`;
     const { data } = await axios.post(`https://zapagent-api.onrender.com/responder/${numero}`, {
       msg: mensagem,
-      prompt: contexto
+      prompt: contexto,
+      agent_id
     });
 
     const resposta = data?.resposta?.trim();
@@ -247,7 +257,6 @@ async function conectarWhatsApp(numero) {
         qrStore[numero] = base64;
         console.log(`📷 QR gerado para ${numero}`);
 
-        // Expira após 5 minutos
         setTimeout(() => {
           if (qrStore[numero]) {
             delete qrStore[numero];
@@ -299,15 +308,15 @@ async function conectarWhatsApp(numero) {
     }
 
     try {
-      const resposta = await gerarRespostaIA(botNumero, texto, agente.prompt);
+      const resposta = await gerarRespostaIA(botNumero, texto, agente.prompt, agente.nome);
       await sock.sendMessage(de, { text: resposta });
       agente.mensagens += 1;
 
-      // Histórico local
-      if (!historicoIA[botNumero]) historicoIA[botNumero] = [];
-      historicoIA[botNumero].push({ user: texto, bot: resposta });
-      if (historicoIA[botNumero].length > 100) {
-        historicoIA[botNumero] = historicoIA[botNumero].slice(-100);
+      const agent_id = `${botNumero}-${agente.nome.replace(/\s+/g, '_').toLowerCase()}`;
+      if (!historicoIA[agent_id]) historicoIA[agent_id] = [];
+      historicoIA[agent_id].push({ user: texto, bot: resposta });
+      if (historicoIA[agent_id].length > 100) {
+        historicoIA[agent_id] = historicoIA[agent_id].slice(-100);
       }
 
       if (agente.webhook) {
