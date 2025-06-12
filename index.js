@@ -205,15 +205,17 @@ app.post('/zapagent', async (req, res) => {
 
 async function gerarRespostaIA(numero, mensagem, contexto) {
   try {
-    const respostaAPI = await axios.post(`https://zapagent-api.onrender.com/responder/${numero}`, {
+    const { data } = await axios.post(`https://zapagent-api.onrender.com/responder/${numero}`, {
       msg: mensagem,
       prompt: contexto
     });
-    const resposta = respostaAPI.data?.resposta;
-    if (!resposta) throw new Error('❌ Resposta vazia da API');
+
+    const resposta = data?.resposta?.trim();
+    if (!resposta || resposta.length < 1) throw new Error('Resposta vazia');
     return resposta;
+
   } catch (err) {
-    console.error('❌ Erro na comunicação com API:', err.message);
+    console.error('❌ Erro IA:', err.message);
     return '❌ Erro ao obter resposta da IA.';
   }
 }
@@ -236,6 +238,7 @@ async function conectarWhatsApp(numero) {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
+    if (!update) return;
     const { connection, lastDisconnect, qr } = update;
 
     if (qr && !verificados.has(numero)) {
@@ -243,6 +246,14 @@ async function conectarWhatsApp(numero) {
         const base64 = await qrcode.toDataURL(qr);
         qrStore[numero] = base64;
         console.log(`📷 QR gerado para ${numero}`);
+
+        // Expira após 5 minutos
+        setTimeout(() => {
+          if (qrStore[numero]) {
+            delete qrStore[numero];
+            console.log(`🕒 QR code expirado para ${numero}`);
+          }
+        }, 5 * 60 * 1000);
       } catch (err) {
         console.error(`❌ Erro ao gerar QR base64 para ${numero}:`, err);
       }
@@ -291,6 +302,13 @@ async function conectarWhatsApp(numero) {
       const resposta = await gerarRespostaIA(botNumero, texto, agente.prompt);
       await sock.sendMessage(de, { text: resposta });
       agente.mensagens += 1;
+
+      // Histórico local
+      if (!historicoIA[botNumero]) historicoIA[botNumero] = [];
+      historicoIA[botNumero].push({ user: texto, bot: resposta });
+      if (historicoIA[botNumero].length > 100) {
+        historicoIA[botNumero] = historicoIA[botNumero].slice(-100);
+      }
 
       if (agente.webhook) {
         axios.post(agente.webhook, {
