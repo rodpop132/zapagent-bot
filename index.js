@@ -1,3 +1,4 @@
+// 🔽 Começa aqui
 const express = require('express');
 const cors = require('cors');
 const {
@@ -15,7 +16,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-const agentesConfig = {}; // user_id -> numero -> agentes[]
+const agentesConfig = {};
 const qrStore = {};
 const clientes = {};
 const verificados = new Set();
@@ -257,7 +258,7 @@ async function conectarWhatsApp(numero) {
     const de = msg.key.remoteJid;
     const texto = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
     const senderNumero = normalizarNumero(de.split('@')[0]);
-    const botNumero = normalizarNumero(sock.user.id.split('@')[0]);
+    const botNumero = sock.user.id.split(':')[0].replace(/\D/g, '');
 
     console.log('📩 Mensagem recebida de:', senderNumero);
     console.log('📨 Conteúdo:', texto);
