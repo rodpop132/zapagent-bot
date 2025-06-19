@@ -28,6 +28,9 @@ const limitesPlano = {
   ultra: { maxMensagens: Infinity, maxAgentes: Infinity }
 };
 
+const API_IA_URL = "https://zapagent-api-lg8z.onrender.com";
+const BOT_URL = "https://zapagent-bot-9jkk.onrender.com";
+
 function normalizarNumero(numero) {
   return numero.replace(/\D/g, '');
 }
@@ -44,7 +47,6 @@ app.get('/qrcode', (req, res) => {
     if (!qr) return res.status(202).json({ conectado: false, qr_code: null, message: 'QR code ainda não gerado' });
 
     return res.json({ conectado: false, qr_code: qr, message: 'QR code disponível' });
-
   } catch (err) {
     console.error('❌ Erro interno em /qrcode:', err);
     return res.status(500).json({ conectado: false, qr_code: null, message: 'Erro interno ao processar código QR' });
@@ -147,7 +149,7 @@ app.post('/zapagent', async (req, res) => {
     const reiniciarQR = async () => {
       for (let tentativas = 0; tentativas < 3; tentativas++) {
         try {
-          await axios.get(`https://zapagent-bot.onrender.com/reiniciar?numero=${numero}`);
+          await axios.get(`${BOT_URL}/reiniciar?numero=${numero}`);
           console.log('✅ Reinicialização do QR acionada com sucesso');
           break;
         } catch {
@@ -188,7 +190,7 @@ async function gerarRespostaIA(numero, mensagem, contexto, agenteNome = 'agente'
   try {
     const agent_id = `${user_id}-${numero}-${agenteNome.replace(/\s+/g, '_').toLowerCase()}`;
     console.log(`🔍 [IA] Preparando chamada para ${agent_id}`);
-    const { data } = await axios.post(`https://zapagent-api.onrender.com/responder/${numero}`, {
+    const { data } = await axios.post(`${API_IA_URL}/responder/${numero}`, {
       msg: mensagem,
       prompt: contexto,
       agent_id
