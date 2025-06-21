@@ -274,39 +274,49 @@ async function conectarWhatsApp(numero) {
 
       agenteEncontrado = true;
 
-      const agente = agentes[0];
-      const plano = agente.plano.toLowerCase();
-      const limite = limitesPlano[plano].maxMensagens;
+      for (const agente of agentes) {
+        const plano = agente.plano.toLowerCase();
+        const limite = limitesPlano[plano].maxMensagens;
 
-      if (agente.mensagens >= limite) {
-        await sock.sendMessage(de, { text: `⚠️ Limite de mensagens do plano (${plano}) atingido.` });
-        return;
-      }
-
-      try {
-        console.log(`🧠 Chamando IA para ${senderNumero} com o prompt do agente ${agente.nome}...`);
-        const resposta = await gerarRespostaIA(botNumero, texto, agente.prompt, agente.nome, user_id);
-        console.log('✅ Resposta IA recebida:', resposta);
-
-        await sock.sendMessage(de, { text: resposta });
-        agente.mensagens += 1;
-
-        const agent_id = `${user_id}-${botNumero}-${agente.nome.replace(/\s+/g, '_').toLowerCase()}`;
-        if (!historicoIA[agent_id]) historicoIA[agent_id] = [];
-        historicoIA[agent_id].push({ user: texto, bot: resposta });
-        if (historicoIA[agent_id].length > 100) historicoIA[agent_id] = historicoIA[agent_id].slice(-100);
-
-        if (agente.webhook) {
-          axios.post(agente.webhook, {
-            numero: senderNumero,
-            pergunta: texto,
-            resposta
-          }).catch(err => console.log('Webhook erro:', err.message));
+        if (agente.mensagens >= limite) {
+          await sock.sendMessage(de, { text: `⚠️ Limite de mensagens do plano (${plano}) atingido.` });
+          return;
         }
 
-      } catch (err) {
-        console.error('❌ Erro IA:', err);
-        await sock.sendMessage(de, { text: '❌ Erro ao gerar resposta da IA.' });
+        // 🔔 Se o tipo do agente for "escuta", envia tudo para o webhook
+        if (agente.tipo === 'escuta' && agente.webhook) {
+          axios.post(agente.webhook, {
+            numero: senderNumero,
+            pergunta: texto
+          }).catch(err => console.log('Webhook escuta erro:', err.message));
+        }
+
+        try {
+          console.log(`🧠 Chamando IA para ${senderNumero} com o prompt do agente ${agente.nome}...`);
+          const resposta = await gerarRespostaIA(botNumero, texto, agente.prompt, agente.nome, user_id);
+          console.log('✅ Resposta IA recebida:', resposta);
+
+          await sock.sendMessage(de, { text: resposta });
+          agente.mensagens += 1;
+
+          const agent_id = `${user_id}-${botNumero}-${agente.nome.replace(/\s+/g, '_').toLowerCase()}`;
+          if (!historicoIA[agent_id]) historicoIA[agent_id] = [];
+          historicoIA[agent_id].push({ user: texto, bot: resposta });
+          if (historicoIA[agent_id].length > 100) historicoIA[agent_id] = historicoIA[agent_id].slice(-100);
+
+          // Webhook padrão (tipo resposta)
+          if (agente.webhook) {
+            axios.post(agente.webhook, {
+              numero: senderNumero,
+              pergunta: texto,
+              resposta
+            }).catch(err => console.log('Webhook erro:', err.message));
+          }
+
+        } catch (err) {
+          console.error('❌ Erro IA:', err);
+          await sock.sendMessage(de, { text: '❌ Erro ao gerar resposta da IA.' });
+        }
       }
     }
 
