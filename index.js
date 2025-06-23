@@ -1,4 +1,4 @@
-// 🔽 BOT ZAPAGENT COMPLETO E MELHORADO
+// 🔽 BOT ZAPAGENT CORRIGIDO - VERSÃO FINAL
 const express = require('express');
 const cors = require('cors');
 const {
@@ -24,12 +24,13 @@ const verificados = new Set();
 const historicoIA = {};
 const heartbeats = {};
 const connectionAttempts = {};
+const lastActivity = {}; // Rastrear última atividade
 
 // Configurações de rate limiting
 const RATE_LIMITS = {
   requests: {},
   maxRequests: 100,
-  windowMs: 60000 // 1 minuto
+  windowMs: 60000
 };
 
 // Limites por plano
@@ -58,20 +59,17 @@ function checkRateLimit(ip) {
     RATE_LIMITS.requests[ip] = [];
   }
   
-  // Remover requisições antigas
   RATE_LIMITS.requests[ip] = RATE_LIMITS.requests[ip].filter(time => time > windowStart);
   
-  // Verificar limite
   if (RATE_LIMITS.requests[ip].length >= RATE_LIMITS.maxRequests) {
     return false;
   }
   
-  // Adicionar requisição atual
   RATE_LIMITS.requests[ip].push(now);
   return true;
 }
 
-// Função para iniciar heartbeat
+// Função para iniciar heartbeat melhorado
 function startHeartbeat(numero) {
   if (heartbeats[numero]) {
     clearInterval(heartbeats[numero]);
@@ -81,7 +79,17 @@ function startHeartbeat(numero) {
     try {
       const sock = clientes[numero];
       if (sock && sock.user) {
+        // Verificar se o socket ainda está ativo
+        const now = Date.now();
+        lastActivity[numero] = now;
         console.log(`💓 Heartbeat para ${numero}: OK`);
+        
+        // Enviar ping para manter conexão ativa
+        try {
+          await sock.sendPresenceUpdate('available');
+        } catch (err) {
+          console.log(`⚠️ Erro no ping para ${numero}:`, err.message);
+        }
       } else {
         console.log(`💔 Heartbeat para ${numero}: Reconectando...`);
         await conectarWhatsApp(numero);
@@ -90,7 +98,7 @@ function startHeartbeat(numero) {
       console.error(`❌ Erro no heartbeat ${numero}:`, err);
       await conectarWhatsApp(numero);
     }
-  }, 30000); // Verificar a cada 30 segundos
+  }, 45000); // Verificar a cada 45 segundos (mais frequente)
 }
 
 // Função para limpar dados antigos
@@ -207,6 +215,7 @@ app.get('/reiniciar', async (req, res) => {
     delete qrStore[numero];
     delete clientes[numero];
     delete connectionAttempts[numero];
+    delete lastActivity[numero];
     
     if (heartbeats[numero]) {
       clearInterval(heartbeats[numero]);
@@ -249,6 +258,7 @@ app.get('/status-detalhado', (req, res) => {
   const temHeartbeat = !!heartbeats[numero];
   const temQR = !!qrStore[numero];
   const tentativas = connectionAttempts[numero] || 0;
+  const ultimaAtividade = lastActivity[numero] ? new Date(lastActivity[numero]).toISOString() : null;
   
   res.json({
     numero,
@@ -257,6 +267,7 @@ app.get('/status-detalhado', (req, res) => {
     temHeartbeat,
     temQR,
     tentativas,
+    ultimaAtividade,
     timestamp: new Date().toISOString()
   });
 });
@@ -346,26 +357,9 @@ app.post('/zapagent', async (req, res) => {
     // Conectar WhatsApp
     await conectarWhatsApp(numero);
 
-    // Reiniciar QR se necessário
-    const reiniciarQR = async () => {
-      for (let tentativas = 0; tentativas < 3; tentativas++) {
-        try {
-          await axios.get(`${BOT_URL}/reiniciar?numero=${numero}`);
-          console.log('✅ Reinicialização do QR acionada com sucesso');
-          break;
-        } catch (err) {
-          console.log(`❌ Tentativa ${tentativas + 1} falhou:`, err.message);
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-      }
-    };
-
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    await reiniciarQR();
-
     // Aguardar QR
     const aguardarQr = async () => {
-      for (let i = 0; i < 20; i++) {
+      for (let i = 0; i < 30; i++) { // Aumentado para 30 tentativas
         if (qrStore[numero]) return true;
         await new Promise(resolve => setTimeout(resolve, 500));
       }
@@ -419,7 +413,7 @@ async function gerarRespostaIA(numero, mensagem, contexto, agenteNome = 'agente'
   }
 }
 
-// Função principal de conexão WhatsApp
+// Função principal de conexão WhatsApp - CORRIGIDA
 async function conectarWhatsApp(numero) {
   try {
     // Limpar dados anteriores
@@ -444,11 +438,35 @@ async function conectarWhatsApp(numero) {
       auth: state,
       browser: ['ZapAgent', 'Chrome', '1.0.0'],
       printQRInTerminal: false,
-      // Configurações para melhor estabilidade
+      // Configurações otimizadas para estabilidade
       connectTimeoutMs: 60000,
-      keepAliveIntervalMs: 25000,
+      keepAliveIntervalMs: 30000, // Aumentado para 30s
       retryRequestDelayMs: 2000,
-      maxRetries: 3
+      maxRetries: 5, // Aumentado para 5 tentativas
+      // Configurações adicionais para estabilidade
+      emitOwnEvents: false,
+      shouldIgnoreJid: jid => jid.includes('@broadcast'),
+      patchMessageBeforeSending: (msg) => {
+        const requiresPatch = !!(
+          msg.buttonsMessage 
+          || msg.templateMessage
+          || msg.listMessage
+        );
+        if (requiresPatch) {
+            msg = {
+                viewOnceMessage: {
+                    message: {
+                        messageContextInfo: {
+                            deviceListMetadataVersion: 2,
+                            deviceListMetadata: {},
+                        },
+                        ...msg,
+                    },
+                },
+            };
+        }
+        return msg;
+      },
     });
 
     clientes[numero] = sock;
@@ -463,7 +481,7 @@ async function conectarWhatsApp(numero) {
           const base64 = await qrcode.toDataURL(qr);
           qrStore[numero] = base64;
           console.log(`📷 QR gerado para ${numero}`);
-          // ❌ REMOVIDO: timeout de 5 minutos que causava o problema
+          // ❌ SEMPRE REMOVIDO: timeout de 5 minutos
         } catch (err) {
           console.error(`❌ Erro ao gerar QR base64 para ${numero}:`, err);
         }
@@ -471,7 +489,7 @@ async function conectarWhatsApp(numero) {
 
       if (connection === 'close') {
         const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-        console.log(`❌ ${numero} desconectado`);
+        console.log(`❌ ${numero} desconectado. Razão:`, lastDisconnect?.error?.output?.statusCode);
         
         // Limpar heartbeat
         if (heartbeats[numero]) {
@@ -479,8 +497,11 @@ async function conectarWhatsApp(numero) {
           delete heartbeats[numero];
         }
         
+        // Remover do conjunto de verificados
+        verificados.delete(numero);
+        
         if (shouldReconnect) {
-          const delay = Math.min(5000 * connectionAttempts[numero], 30000); // Máximo 30s
+          const delay = Math.min(3000 * connectionAttempts[numero], 15000); // Reduzido para máximo 15s
           console.log(`🔄 Tentando reconectar ${numero} em ${delay/1000} segundos...`);
           setTimeout(() => conectarWhatsApp(numero), delay);
         }
@@ -488,10 +509,18 @@ async function conectarWhatsApp(numero) {
         verificados.add(numero);
         delete qrStore[numero];
         delete connectionAttempts[numero]; // Reset tentativas
+        lastActivity[numero] = Date.now();
         console.log(`✅ ${numero} conectado com sucesso!`);
         
         // Iniciar heartbeat
         startHeartbeat(numero);
+        
+        // Enviar presença inicial
+        try {
+          await sock.sendPresenceUpdate('available');
+        } catch (err) {
+          console.log(`⚠️ Erro ao enviar presença inicial para ${numero}:`, err.message);
+        }
       }
     });
 
@@ -509,6 +538,9 @@ async function conectarWhatsApp(numero) {
       console.log('📩 Mensagem recebida de:', senderNumero);
       console.log('📨 Conteúdo:', texto);
       console.log('🤖 Bot conectado como:', botNumero);
+
+      // Atualizar última atividade
+      lastActivity[numero] = Date.now();
 
       let agenteEncontrado = false;
 
@@ -586,7 +618,7 @@ async function conectarWhatsApp(numero) {
   } catch (err) {
     console.error(`❌ Erro ao conectar ${numero}:`, err);
     // Tentar reconectar em caso de erro
-    const delay = Math.min(10000 * connectionAttempts[numero], 60000); // Máximo 1 minuto
+    const delay = Math.min(5000 * connectionAttempts[numero], 30000); // Reduzido para máximo 30s
     setTimeout(() => conectarWhatsApp(numero), delay);
   }
 }
@@ -600,4 +632,4 @@ app.listen(PORT, () => {
   console.log(`🌐 Servidor online em http://localhost:${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`✅ Bot ZapAgent pronto para uso!`);
-});
+}); 
